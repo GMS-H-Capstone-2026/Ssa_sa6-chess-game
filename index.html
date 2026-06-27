@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chess.com - Play Chess Online</title>
+    <!-- Google Fonts: Montserrat & Nunito (similar to Chess.com modern feel) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=Nunito+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <!-- FontAwesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+    <!-- Chess.js rules library (v0.10.3) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Chess.com Left Navigation Bar -->
+        <nav class="side-nav">
+            <div class="nav-brand">
+                <i class="fa-solid fa-chess-pawn brand-icon"></i>
+                <span class="brand-text">chess.com</span>
+            </div>
+            <div class="nav-links">
+                <a href="#" class="nav-item active"><i class="fa-solid fa-play"></i> <span>Play</span></a>
+                <a href="#" class="nav-item" id="nav-rules"><i class="fa-solid fa-graduation-cap"></i> <span>Learn</span></a>
+                <a href="#" class="nav-item" id="nav-themes"><i class="fa-solid fa-palette"></i> <span>Themes</span></a>
+                <a href="#" class="nav-item" id="nav-sound"><i class="fa-solid fa-volume-high"></i> <span>Sound</span></a>
+            </div>
+            <div class="nav-footer">
+                <a href="#" class="nav-item" id="nav-help"><i class="fa-solid fa-question-circle"></i> <span>Help</span></a>
+            </div>
+        </nav>
+
+        <!-- Chess.com Main Layout -->
+        <main class="chess-main">
+            <div class="game-area-wrapper">
+                
+                <!-- Vertical Evaluation Bar (Classic Chess.com meter) -->
+                <div class="eval-bar-container">
+                    <div class="eval-bar-wrapper">
+                        <div id="eval-bar" class="eval-bar" style="height: 50%;"></div>
+                    </div>
+                    <span id="material-advantage" class="eval-score">+0.0</span>
+                </div>
+
+                <!-- Central Board Area -->
+                <div class="board-column">
+                    <!-- Opponent Info Player Bar -->
+                    <div class="player-info-row" id="opponent-bar">
+                        <div class="player-profile">
+                            <div class="player-avatar-container">
+                                <div class="player-avatar" id="opponent-avatar"><i class="fa-solid fa-robot"></i></div>
+                            </div>
+                            <div class="player-meta">
+                                <span class="player-username" id="opponent-name">Computer</span>
+                                <span class="player-rating">(1200)</span>
+                            </div>
+                            <!-- Captured Pieces stack -->
+                            <div class="captured-pieces" id="captured-by-black"></div>
+                        </div>
+                        <div class="player-timer" id="opponent-clock">--:--</div>
+                    </div>
+
+                    <!-- Chess Board Grid -->
+                    <div class="board-wrapper">
+                        <!-- Y Coordinates (1-8) -->
+                        <div class="board-coords-y" id="coords-y-left"></div>
+                        <!-- X Coordinates (a-h) -->
+                        <div class="board-coords-x" id="coords-x-bottom"></div>
+                        <div id="chessboard" class="chessboard">
+                            <!-- Squares and pieces rendered dynamically -->
+                        </div>
+                    </div>
+
+                    <!-- User Info Player Bar -->
+                    <div class="player-info-row" id="player-bar">
+                        <div class="player-profile">
+                            <div class="player-avatar-container">
+                                <div class="player-avatar"><i class="fa-solid fa-user"></i></div>
+                            </div>
+                            <div class="player-meta">
+                                <span class="player-username" id="player-name">Player</span>
+                                <span class="player-rating">(1200)</span>
+                            </div>
+                            <!-- Captured Pieces stack -->
+                            <div class="captured-pieces" id="captured-by-white"></div>
+                        </div>
+                        <div class="player-timer" id="player-clock">--:--</div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Chess.com Right Console Sidebar -->
+            <section class="console-sidebar">
+                <!-- Tab Headers -->
+                <div class="sidebar-tabs">
+                    <button class="tab-btn active" data-tab="game-tab"><i class="fa-solid fa-chess"></i> Play</button>
+                    <button class="tab-btn" data-tab="settings-tab"><i class="fa-solid fa-cog"></i> Settings</button>
+                </div>
+
+                <!-- Tab 1: Active Game Control & Move Logs -->
+                <div class="tab-content" id="game-tab">
+                    <div class="sidebar-panel-header">
+                        <span id="game-status-label"><i class="fa-solid fa-circle-dot status-indicator"></i> Your Turn</span>
+                    </div>
+
+                    <!-- Move Logs Table -->
+                    <div class="moves-container">
+                        <div class="moves-table-header">
+                            <span>#</span>
+                            <span>White</span>
+                            <span>Black</span>
+                        </div>
+                        <div id="moves-history" class="moves-list">
+                            <!-- Move list appended here -->
+                            <div class="no-moves-message">No moves played yet. Start a new game!</div>
+                        </div>
+                    </div>
+
+                    <!-- Game Control Buttons (First, Prev, Next, Last, Flip) -->
+                    <div class="game-navigation-controls">
+                        <button id="nav-first-btn" title="First Move" disabled><i class="fa-solid fa-angles-left"></i></button>
+                        <button id="nav-prev-btn" title="Previous Move" disabled><i class="fa-solid fa-angle-left"></i></button>
+                        <button id="nav-next-btn" title="Next Move" disabled><i class="fa-solid fa-angle-right"></i></button>
+                        <button id="nav-last-btn" title="Last Move" disabled><i class="fa-solid fa-angles-right"></i></button>
+                    </div>
+
+                    <div class="sidebar-actions-panel">
+                        <button id="resign-btn" class="sidebar-btn danger"><i class="fa-solid fa-flag"></i> Resign</button>
+                        <button id="draw-claim-btn" class="sidebar-btn secondary"><i class="fa-solid fa-handshake"></i> Draw</button>
+                    </div>
+                </div>
+
+                <!-- Tab 2: Settings & Setup Panel -->
+                <div class="tab-content hidden" id="settings-tab">
+                    <div class="settings-panel">
+                        <div class="settings-group">
+                            <label class="settings-label">Game Mode</label>
+                            <div class="flat-segmented-control">
+                                <input type="radio" name="game-mode" id="mode-ai" value="ai" checked>
+                                <label for="mode-ai"><i class="fa-solid fa-robot"></i> VS Computer</label>
+                                
+                                <input type="radio" name="game-mode" id="mode-pvp" value="pvp">
+                                <label for="mode-pvp"><i class="fa-solid fa-user-friends"></i> 2-Player</label>
+                            </div>
+                        </div>
+
+                        <div class="settings-group" id="ai-difficulty-container">
+                            <label class="settings-label">Computer Level</label>
+                            <div class="level-selectors">
+                                <input type="radio" name="ai-difficulty" id="diff-easy" value="0">
+                                <label for="diff-easy" class="lvl-btn">Easy (1)</label>
+                                
+                                <input type="radio" name="ai-difficulty" id="diff-medium" value="1" checked>
+                                <label for="diff-medium" class="lvl-btn">Medium (2)</label>
+                                
+                                <input type="radio" name="ai-difficulty" id="diff-hard" value="2">
+                                <label for="diff-hard" class="lvl-btn">Hard (3)</label>
+                            </div>
+                        </div>
+
+                        <div class="settings-group">
+                            <label class="settings-label">Play As</label>
+                            <div class="flat-segmented-control select-color-control">
+                                <input type="radio" name="player-color" id="color-white" value="w" checked>
+                                <label for="color-white"><i class="fa-solid fa-chess-pawn"></i> White</label>
+                                
+                                <input type="radio" name="player-color" id="color-black" value="b">
+                                <label for="color-black"><i class="fa-solid fa-chess-pawn-black"></i> Black</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-bottom-actions">
+                        <button id="new-game-btn" class="primary-green-btn"><i class="fa-solid fa-play"></i> Play New Game</button>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Theme selection overlay / modal -->
+    <div id="theme-modal" class="modal-overlay hidden">
+        <div class="modal-content theme-picker-modal">
+            <h3><i class="fa-solid fa-palette"></i> Chessboard Theme</h3>
+            <p class="modal-subtitle">Customize the colors of your board squares</p>
+            <div class="theme-options">
+                <button class="theme-option active" data-theme="emerald">
+                    <div class="theme-preview emerald-prev">
+                        <div class="sq-l"></div><div class="sq-d"></div>
+                    </div>
+                    <span>Chess.com Green (Default)</span>
+                </button>
+                <button class="theme-option" data-theme="midnight">
+                    <div class="theme-preview midnight-prev">
+                        <div class="sq-l"></div><div class="sq-d"></div>
+                    </div>
+                    <span>Midnight Ocean</span>
+                </button>
+                <button class="theme-option" data-theme="cyber">
+                    <div class="theme-preview cyber-prev">
+                        <div class="sq-l"></div><div class="sq-d"></div>
+                    </div>
+                    <span>Cyber Glow</span>
+                </button>
+                <button class="theme-option" data-theme="classic">
+                    <div class="theme-preview classic-prev">
+                        <div class="sq-l"></div><div class="sq-d"></div>
+                    </div>
+                    <span>Maple Wood</span>
+                </button>
+            </div>
+            <button id="close-theme-btn" class="modal-close-btn">Close</button>
+        </div>
+    </div>
+
+    <!-- Help / Rules Modal -->
+    <div id="rules-modal" class="modal-overlay hidden">
+        <div class="modal-content scrollable-modal">
+            <h3><i class="fa-solid fa-circle-question"></i> How to Play & Controls</h3>
+            <div class="modal-body">
+                <h4>Basic Interactions</h4>
+                <p>1. <strong>Drag & Drop:</strong> Drag any piece and drop it on a highlighted square to play a move.</p>
+                <p>2. <strong>Click to Move:</strong> Alternatively, click a piece to view valid moves, then click the target square to move it.</p>
+                
+                <h4>Special Moves</h4>
+                <ul>
+                    <li><strong>Castling:</strong> If the King and Rook haven't moved and the path is clear, move the King two squares toward the Rook. The Rook jumps over automatically.</li>
+                    <li><strong>En Passant:</strong> If an opponent pawn advances two squares past yours, you can capture it diagonally on your very next turn.</li>
+                    <li><strong>Promotion:</strong> When a pawn reaches the opposite edge of the board, it automatically promotes. Select your preferred piece (Queen, Rook, Bishop, Knight) in the pop-up menu.</li>
+                </ul>
+
+                <h4>AI Difficulty Info</h4>
+                <ul>
+                    <li><strong>Easy:</strong> plays quickly and makes frequent positional errors.</li>
+                    <li><strong>Medium:</strong> analyzes 2 steps ahead. Employs tactical play.</li>
+                    <li><strong>Hard:</strong> analyzes 3-4 steps ahead. Strongly defends positions and punishes errors.</li>
+                </ul>
+            </div>
+            <button id="close-rules-btn" class="modal-close-btn">Got It</button>
+        </div>
+    </div>
+
+    <!-- Pawn Promotion Select Overlay -->
+    <div id="promotion-overlay" class="modal-overlay hidden">
+        <div class="modal-content promotion-picker">
+            <h3>Pawn Promotion</h3>
+            <p>Your Pawn reached the last rank. Choose a piece to promote to:</p>
+            <div class="promotion-options">
+                <button class="promo-btn" data-piece="q" title="Queen">
+                    <span class="piece-icon q-icon"></span>
+                    <span>Queen</span>
+                </button>
+                <button class="promo-btn" data-piece="r" title="Rook">
+                    <span class="piece-icon r-icon"></span>
+                    <span>Rook</span>
+                </button>
+                <button class="promo-btn" data-piece="b" title="Bishop">
+                    <span class="piece-icon b-icon"></span>
+                    <span>Bishop</span>
+                </button>
+                <button class="promo-btn" data-piece="n" title="Knight">
+                    <span class="piece-icon n-icon"></span>
+                    <span>Knight</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Game Over Announcement Overlay -->
+    <div id="game-over-overlay" class="modal-overlay hidden">
+        <div class="modal-content game-over-panel">
+            <div class="game-over-icon-container">
+                <i id="game-over-icon" class="fa-solid fa-trophy"></i>
+            </div>
+            <h2 id="game-over-title">Checkmate!</h2>
+            <p id="game-over-reason">White wins by Checkmate.</p>
+            <div class="game-over-stats">
+                <div class="stat-row">
+                    <span>Moves Played</span>
+                    <span id="final-moves">32</span>
+                </div>
+                <div class="stat-row">
+                    <span>Game Duration</span>
+                    <span id="final-time">05:42</span>
+                </div>
+            </div>
+            <button id="restart-game-btn" class="primary-green-btn"><i class="fa-solid fa-rotate-right"></i> Play Again</button>
+        </div>
+    </div>
+
+    <!-- Confetti Particle canvas for win scenario -->
+    <canvas id="confetti-canvas" class="confetti-canvas"></canvas>
+
+    <!-- Custom Logic Script -->
+    <script src="app.js"></script>
+</body>
+</html>
