@@ -21,7 +21,7 @@ const SoundController = {
 
     toggleMute() {
         this.muted = !this.muted;
-        const btn = document.getElementById('sound-btn');
+        const btn = document.getElementById('nav-sound');
         if (this.muted) {
             btn.innerHTML = '<i class="fa-solid fa-volume-xmark"></i>';
             btn.classList.add('muted');
@@ -313,6 +313,17 @@ let historyStates = []; // For Undo/Redo stack
 let currentStateIndex = -1;
 let pendingPromotionMove = null;
 
+// DATA ENGINEERING STUDENT PROJECT
+// 이 배열은 체스 게임에서 발생하는 "원천 로그(raw event log)"를 담는 저장소입니다.
+// 학생 과제는 아래 TODO 함수들을 완성해서 이 로그를 수집, 저장, 변환, 출력하는 것입니다.
+const DATA_LOG_STORAGE_KEY = 'chessDataEngineeringMoveLogs';
+const GAME_SUMMARY_STORAGE_KEY = 'chessDataEngineeringGameSummaries';
+let moveLogs = [];
+let gameSummaries = [];
+let currentGameId = null;
+let currentGameStartedAt = null;
+let currentGameSaved = false;
+
 // DOM Elements cache
 const chessboard = document.getElementById('chessboard');
 const opponentName = document.getElementById('opponent-name');
@@ -326,6 +337,244 @@ const materialAdvantage = document.getElementById('material-advantage');
 const evalBar = document.getElementById('eval-bar');
 const undoBtn = document.getElementById('undo-btn');
 const redoBtn = document.getElementById('redo-btn');
+
+// Data Lab DOM Elements
+const dataLogBody = document.getElementById('data-log-body');
+const statTotalMoves = document.getElementById('stat-total-moves');
+const statWhiteMoves = document.getElementById('stat-white-moves');
+const statBlackMoves = document.getElementById('stat-black-moves');
+const statCaptures = document.getElementById('stat-captures');
+const exportCsvBtn = document.getElementById('export-csv-btn');
+const clearDataBtn = document.getElementById('clear-data-btn');
+const cumulativeTotalGames = document.getElementById('cumulative-total-games');
+const cumulativeTotalMoves = document.getElementById('cumulative-total-moves');
+const cumulativeAvgMoves = document.getElementById('cumulative-avg-moves');
+const cumulativeCaptures = document.getElementById('cumulative-captures');
+const gameSummaryBody = document.getElementById('game-summary-body');
+const exportGamesCsvBtn = document.getElementById('export-games-csv-btn');
+const clearGamesBtn = document.getElementById('clear-games-btn');
+
+function getPieceName(type) {
+    const names = {
+        p: 'pawn',
+        n: 'knight',
+        b: 'bishop',
+        r: 'rook',
+        q: 'queen',
+        k: 'king'
+    };
+    return names[type] || 'unknown';
+}
+
+function buildMoveLog(move) {
+    // TODO 1: 로그 스키마에 필요한 컬럼을 더 추가해보세요.
+    // 예: isCheck, isCheckmate, beforeFen, afterFen, playerType(ai/player)
+    return {
+        gameId: currentGameId,
+        moveNumber: moveLogs.length + 1,
+        color: move.color === 'w' ? 'white' : 'black',
+        piece: getPieceName(move.piece),
+        from: move.from,
+        to: move.to,
+        capturedPiece: move.captured ? getPieceName(move.captured) : '',
+        san: move.san,
+        timestamp: new Date().toISOString()
+    };
+}
+
+function saveLogsToStorage() {
+    // TODO 2: localStorage에 JSON 문자열로 저장되는 과정을 설명 주석으로 정리해보세요.
+    localStorage.setItem(DATA_LOG_STORAGE_KEY, JSON.stringify(moveLogs));
+}
+
+function saveGameSummariesToStorage() {
+    localStorage.setItem(GAME_SUMMARY_STORAGE_KEY, JSON.stringify(gameSummaries));
+}
+
+function loadLogsFromStorage() {
+    // TODO 3: JSON.parse가 실패하는 상황을 가정하고 예외 처리를 개선해보세요.
+    const savedLogs = localStorage.getItem(DATA_LOG_STORAGE_KEY);
+    moveLogs = savedLogs ? JSON.parse(savedLogs) : [];
+}
+
+function loadGameSummariesFromStorage() {
+    const savedGames = localStorage.getItem(GAME_SUMMARY_STORAGE_KEY);
+    gameSummaries = savedGames ? JSON.parse(savedGames) : [];
+}
+
+function startCurrentGameSession() {
+    currentGameId = `game-${Date.now()}`;
+    currentGameStartedAt = new Date().toISOString();
+    currentGameSaved = false;
+    renderStatsDashboard();
+}
+
+function getCurrentGameLogs() {
+    return moveLogs.filter(log => log.gameId === currentGameId);
+}
+
+function finishCurrentGame(result, reason) {
+    if (!currentGameId || currentGameSaved) return;
+
+    const currentLogs = getCurrentGameLogs();
+    if (currentLogs.length === 0) return;
+
+    const summary = {
+        gameId: currentGameId,
+        startedAt: currentGameStartedAt,
+        endedAt: new Date().toISOString(),
+        result,
+        reason,
+        totalMoves: currentLogs.length,
+        whiteMoves: currentLogs.filter(log => log.color === 'white').length,
+        blackMoves: currentLogs.filter(log => log.color === 'black').length,
+        captures: currentLogs.filter(log => log.capturedPiece).length,
+        durationSeconds: timeElapsed,
+        gameMode,
+        playerColor
+    };
+
+    gameSummaries.push(summary);
+    saveGameSummariesToStorage();
+    currentGameSaved = true;
+    renderStatsDashboard();
+}
+
+function recordMoveLog(move) {
+    // TODO 4: from, to, piece 값이 비어 있으면 저장하지 않는 데이터 품질 검사를 추가해보세요.
+    const log = buildMoveLog(move);
+    moveLogs.push(log);
+    saveLogsToStorage();
+    renderDataLab();
+}
+
+function getMoveLogStats() {
+    // TODO 5: 가장 많이 움직인 말, 가장 많이 이동한 색상 같은 통계를 추가해보세요.
+    return {
+        total: moveLogs.length,
+        white: moveLogs.filter(log => log.color === 'white').length,
+        black: moveLogs.filter(log => log.color === 'black').length,
+        captures: moveLogs.filter(log => log.capturedPiece).length
+    };
+}
+
+function renderDataLab() {
+    if (!dataLogBody) return;
+
+    const stats = getMoveLogStats();
+    statTotalMoves.textContent = stats.total;
+    statWhiteMoves.textContent = stats.white;
+    statBlackMoves.textContent = stats.black;
+    statCaptures.textContent = stats.captures;
+
+    if (moveLogs.length === 0) {
+        dataLogBody.innerHTML = '<tr><td colspan="5">아직 데이터 로그가 없습니다.</td></tr>';
+        return;
+    }
+
+    // TODO 6: capturedPiece, timestamp 컬럼도 테이블에 보여주도록 HTML을 확장해보세요.
+    dataLogBody.innerHTML = moveLogs.slice(-8).reverse().map(log => `
+        <tr>
+            <td>${log.moveNumber}</td>
+            <td>${log.color}</td>
+            <td>${log.piece}</td>
+            <td>${log.from}</td>
+            <td>${log.to}</td>
+        </tr>
+    `).join('');
+}
+
+function getCumulativeStats() {
+    const totalGames = gameSummaries.length;
+    const totalMoves = gameSummaries.reduce((sum, gameSummary) => sum + gameSummary.totalMoves, 0);
+    const totalCaptures = gameSummaries.reduce((sum, gameSummary) => sum + gameSummary.captures, 0);
+
+    return {
+        totalGames,
+        totalMoves,
+        avgMoves: totalGames === 0 ? 0 : Math.round(totalMoves / totalGames),
+        totalCaptures
+    };
+}
+
+function renderStatsDashboard() {
+    if (!gameSummaryBody) return;
+
+    const stats = getCumulativeStats();
+    cumulativeTotalGames.textContent = stats.totalGames;
+    cumulativeTotalMoves.textContent = stats.totalMoves;
+    cumulativeAvgMoves.textContent = stats.avgMoves;
+    cumulativeCaptures.textContent = stats.totalCaptures;
+
+    if (gameSummaries.length === 0) {
+        gameSummaryBody.innerHTML = '<tr><td colspan="4">아직 완료된 경기 데이터가 없습니다.</td></tr>';
+        return;
+    }
+
+    // TODO 8: 최근 경기 목록에 startedAt, endedAt, gameMode 같은 컬럼을 더 표시해보세요.
+    gameSummaryBody.innerHTML = gameSummaries.slice(-8).reverse().map(gameSummary => `
+        <tr>
+            <td>${gameSummary.gameId.replace('game-', '')}</td>
+            <td>${gameSummary.result}</td>
+            <td>${gameSummary.totalMoves}</td>
+            <td>${gameSummary.durationSeconds}s</td>
+        </tr>
+    `).join('');
+}
+
+function convertLogsToCSV(logs) {
+    // TODO 7: 쉼표나 줄바꿈이 들어간 데이터도 안전하게 CSV로 바꾸는 함수를 개선해보세요.
+    const headers = ['moveNumber', 'color', 'piece', 'from', 'to', 'capturedPiece', 'san', 'timestamp'];
+    const rows = logs.map(log => headers.map(header => `"${log[header] ?? ''}"`).join(','));
+    return [headers.join(','), ...rows].join('\n');
+}
+
+function downloadCSV() {
+    if (moveLogs.length === 0) {
+        alert('내보낼 이동 로그가 없습니다. 먼저 체스 말을 움직여 데이터를 만들어보세요.');
+        return;
+    }
+
+    const csv = convertLogsToCSV(moveLogs);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'chess_move_logs.csv';
+    link.click();
+    URL.revokeObjectURL(url);
+}
+
+function clearMoveLogs() {
+    moveLogs = [];
+    saveLogsToStorage();
+    renderDataLab();
+    renderStatsDashboard();
+}
+
+function clearGameSummaries() {
+    gameSummaries = [];
+    saveGameSummariesToStorage();
+    renderStatsDashboard();
+}
+
+function downloadGameSummariesCSV() {
+    if (gameSummaries.length === 0) {
+        alert('내보낼 경기 요약 데이터가 없습니다. 먼저 한 판 이상 플레이해보세요.');
+        return;
+    }
+
+    const headers = ['gameId', 'startedAt', 'endedAt', 'result', 'totalMoves', 'whiteMoves', 'blackMoves', 'captures', 'durationSeconds', 'gameMode', 'playerColor'];
+    const rows = gameSummaries.map(summary => headers.map(header => `"${summary[header] ?? ''}"`).join(','));
+    const csv = [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'chess_game_summaries.csv';
+    link.click();
+    URL.revokeObjectURL(url);
+}
 
 // 6. Board Initialization and Rendering
 function initBoard() {
@@ -623,6 +872,8 @@ function makeMove(from, to, promotion = null) {
         } else {
             SoundController.playMove();
         }
+
+        recordMoveLog(move);
         
         // Capture game state history for undo/redo
         saveHistoryState();
@@ -720,6 +971,7 @@ function triggerAIMove() {
                     if (move.captured) SoundController.playCapture();
                     else SoundController.playMove();
 
+                    recordMoveLog(move);
                     saveHistoryState();
                     initBoard();
                     updateUI();
@@ -932,19 +1184,23 @@ function updateUI() {
     // 2. Turn message display
     const turn = game.turn();
     const isPlayersTurn = gameMode === 'ai' ? (turn === playerColor) : true;
+    const gameStatusLabel = document.getElementById('game-status-label');
     
     if (game.game_over()) {
         playerStatus.textContent = '게임 종료';
         opponentStatus.textContent = '게임 종료';
+        gameStatusLabel.innerHTML = '<i class="fa-solid fa-circle-dot status-indicator"></i> Game Over';
     } else if (gameMode === 'ai') {
         if (turn === playerColor) {
             playerStatus.textContent = '당신의 차례';
             opponentStatus.textContent = '대기 중';
+            gameStatusLabel.innerHTML = '<i class="fa-solid fa-circle-dot status-indicator"></i> Your Turn';
             document.getElementById('player-bar').classList.add('active-player');
             document.getElementById('opponent-bar').classList.remove('active-player');
         } else {
             playerStatus.textContent = '대기 중';
             opponentStatus.textContent = 'AI 생각 중...';
+            gameStatusLabel.innerHTML = '<i class="fa-solid fa-circle-dot status-indicator"></i> AI Turn';
             document.getElementById('player-bar').classList.remove('active-player');
             document.getElementById('opponent-bar').classList.add('active-player');
         }
@@ -953,11 +1209,13 @@ function updateUI() {
         if (turn === 'w') {
             playerStatus.textContent = '백의 차례 (이동하세요)';
             opponentStatus.textContent = '대기 중';
+            gameStatusLabel.innerHTML = '<i class="fa-solid fa-circle-dot status-indicator"></i> White Turn';
             document.getElementById('player-bar').classList.add('active-player');
             document.getElementById('opponent-bar').classList.remove('active-player');
         } else {
             playerStatus.textContent = '대기 중';
             opponentStatus.textContent = '흑의 차례 (이동하세요)';
+            gameStatusLabel.innerHTML = '<i class="fa-solid fa-circle-dot status-indicator"></i> Black Turn';
             document.getElementById('player-bar').classList.remove('active-player');
             document.getElementById('opponent-bar').classList.add('active-player');
         }
@@ -971,6 +1229,7 @@ function updateUI() {
 
     // 5. Update Evaluation Bar
     updateEvaluation();
+    renderDataLab();
 }
 
 function renderMoveHistory() {
@@ -1185,6 +1444,7 @@ function checkGameOver() {
             reason = '폰의 전진이나 기물의 잡힘 없이 50수가 지나 무승부 처리되었습니다.';
         }
         
+        finishCurrentGame(title, reason);
         showGameOverOverlay(title, reason, isWin);
         return true;
     }
@@ -1214,6 +1474,7 @@ function showGameOverOverlay(title, reason, isWin) {
 }
 
 function startNewGame() {
+    finishCurrentGame('새 게임 시작', '완료 전 새 게임을 시작하여 이전 경기를 저장했습니다.');
     stopTimer();
     ConfettiEffect.stop();
     
@@ -1234,6 +1495,7 @@ function startNewGame() {
     // Reset controls panel state
     historyStates = [game.fen()];
     currentStateIndex = 0;
+    startCurrentGameSession();
     
     // Hide overlay screens
     document.getElementById('game-over-overlay').classList.add('hidden');
@@ -1284,22 +1546,49 @@ document.querySelectorAll('input[name="game-mode"]').forEach(radio => {
     });
 });
 
+// Tab switcher
+document.querySelectorAll('.tab-btn').forEach(button => {
+    button.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(content => content.classList.add('hidden'));
+        button.classList.add('active');
+        document.getElementById(button.dataset.tab).classList.remove('hidden');
+    });
+});
+
 // UI Modal toggles
 const themeModal = document.getElementById('theme-modal');
 const rulesModal = document.getElementById('rules-modal');
 
-document.getElementById('theme-btn').addEventListener('click', () => themeModal.classList.remove('hidden'));
+document.getElementById('nav-themes').addEventListener('click', (event) => {
+    event.preventDefault();
+    themeModal.classList.remove('hidden');
+});
 document.getElementById('close-theme-btn').addEventListener('click', () => themeModal.classList.add('hidden'));
 
-document.getElementById('rules-btn').addEventListener('click', () => rulesModal.classList.remove('hidden'));
+document.getElementById('nav-rules').addEventListener('click', (event) => {
+    event.preventDefault();
+    rulesModal.classList.remove('hidden');
+});
+document.getElementById('nav-help').addEventListener('click', (event) => {
+    event.preventDefault();
+    rulesModal.classList.remove('hidden');
+});
 document.getElementById('close-rules-btn').addEventListener('click', () => rulesModal.classList.add('hidden'));
 
-document.getElementById('sound-btn').addEventListener('click', () => SoundController.toggleMute());
+document.getElementById('nav-sound').addEventListener('click', (event) => {
+    event.preventDefault();
+    SoundController.toggleMute();
+});
 document.getElementById('new-game-btn').addEventListener('click', startNewGame);
 document.getElementById('restart-game-btn').addEventListener('click', startNewGame);
 
 document.getElementById('undo-btn').addEventListener('click', performUndo);
 document.getElementById('redo-btn').addEventListener('click', performRedo);
+exportCsvBtn.addEventListener('click', downloadCSV);
+clearDataBtn.addEventListener('click', clearMoveLogs);
+exportGamesCsvBtn.addEventListener('click', downloadGameSummariesCSV);
+clearGamesBtn.addEventListener('click', clearGameSummaries);
 
 // Theme Picker Logic
 document.querySelectorAll('.theme-option').forEach(opt => {
@@ -1331,5 +1620,9 @@ document.addEventListener('keydown', (e) => {
 
 // Start Game automatically on load
 window.addEventListener('load', () => {
+    loadLogsFromStorage();
+    loadGameSummariesFromStorage();
+    renderDataLab();
+    renderStatsDashboard();
     startNewGame();
 });

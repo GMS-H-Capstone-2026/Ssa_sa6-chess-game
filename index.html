@@ -56,6 +56,7 @@
                             <div class="player-meta">
                                 <span class="player-username" id="opponent-name">Computer</span>
                                 <span class="player-rating">(1200)</span>
+                                <span class="player-status" id="opponent-status">대기 중</span>
                             </div>
                             <!-- Captured Pieces stack -->
                             <div class="captured-pieces" id="captured-by-black"></div>
@@ -83,6 +84,7 @@
                             <div class="player-meta">
                                 <span class="player-username" id="player-name">Player</span>
                                 <span class="player-rating">(1200)</span>
+                                <span class="player-status" id="player-status">당신의 차례</span>
                             </div>
                             <!-- Captured Pieces stack -->
                             <div class="captured-pieces" id="captured-by-white"></div>
@@ -98,6 +100,7 @@
                 <!-- Tab Headers -->
                 <div class="sidebar-tabs">
                     <button class="tab-btn active" data-tab="game-tab"><i class="fa-solid fa-chess"></i> Play</button>
+                    <button class="tab-btn" data-tab="stats-tab"><i class="fa-solid fa-chart-simple"></i> Stats</button>
                     <button class="tab-btn" data-tab="settings-tab"><i class="fa-solid fa-cog"></i> Settings</button>
                 </div>
 
@@ -105,6 +108,10 @@
                 <div class="tab-content" id="game-tab">
                     <div class="sidebar-panel-header">
                         <span id="game-status-label"><i class="fa-solid fa-circle-dot status-indicator"></i> Your Turn</span>
+                        <div class="quick-stats">
+                            <span>Turn <strong id="move-counter">0</strong></span>
+                            <span id="game-timer">00:00</span>
+                        </div>
                     </div>
 
                     <!-- Move Logs Table -->
@@ -122,19 +129,121 @@
 
                     <!-- Game Control Buttons (First, Prev, Next, Last, Flip) -->
                     <div class="game-navigation-controls">
-                        <button id="nav-first-btn" title="First Move" disabled><i class="fa-solid fa-angles-left"></i></button>
-                        <button id="nav-prev-btn" title="Previous Move" disabled><i class="fa-solid fa-angle-left"></i></button>
-                        <button id="nav-next-btn" title="Next Move" disabled><i class="fa-solid fa-angle-right"></i></button>
-                        <button id="nav-last-btn" title="Last Move" disabled><i class="fa-solid fa-angles-right"></i></button>
+                        <button id="undo-btn" title="Undo" disabled><i class="fa-solid fa-angle-left"></i></button>
+                        <button id="redo-btn" title="Redo" disabled><i class="fa-solid fa-angle-right"></i></button>
                     </div>
 
                     <div class="sidebar-actions-panel">
                         <button id="resign-btn" class="sidebar-btn danger"><i class="fa-solid fa-flag"></i> Resign</button>
                         <button id="draw-claim-btn" class="sidebar-btn secondary"><i class="fa-solid fa-handshake"></i> Draw</button>
                     </div>
+
+                    <section class="data-lab-panel" aria-labelledby="data-lab-title">
+                        <div class="data-lab-header">
+                            <h2 id="data-lab-title"><i class="fa-solid fa-database"></i> Data Lab</h2>
+                            <span class="lab-badge">Student TODO</span>
+                        </div>
+                        <div class="data-stat-grid">
+                            <div class="data-stat-card">
+                                <span class="stat-label">Log Rows</span>
+                                <strong id="stat-total-moves">0</strong>
+                            </div>
+                            <div class="data-stat-card">
+                                <span class="stat-label">White</span>
+                                <strong id="stat-white-moves">0</strong>
+                            </div>
+                            <div class="data-stat-card">
+                                <span class="stat-label">Black</span>
+                                <strong id="stat-black-moves">0</strong>
+                            </div>
+                            <div class="data-stat-card">
+                                <span class="stat-label">Captured</span>
+                                <strong id="stat-captures">0</strong>
+                            </div>
+                        </div>
+                        <div class="data-actions">
+                            <button id="export-csv-btn" class="sidebar-btn secondary" type="button">
+                                <i class="fa-solid fa-file-csv"></i> CSV Export
+                            </button>
+                            <button id="clear-data-btn" class="sidebar-btn danger" type="button">
+                                <i class="fa-solid fa-trash"></i> Clear Logs
+                            </button>
+                        </div>
+                        <div class="data-table-wrap">
+                            <table class="data-log-table">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Color</th>
+                                        <th>Piece</th>
+                                        <th>From</th>
+                                        <th>To</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="data-log-body">
+                                    <tr>
+                                        <td colspan="5">아직 데이터 로그가 없습니다.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
                 </div>
 
-                <!-- Tab 2: Settings & Setup Panel -->
+                <!-- Tab 2: Cumulative Game Data Dashboard -->
+                <div class="tab-content hidden" id="stats-tab">
+                    <section class="data-lab-panel" aria-labelledby="stats-title">
+                        <div class="data-lab-header">
+                            <h2 id="stats-title"><i class="fa-solid fa-chart-line"></i> 누적 통계</h2>
+                            <span class="lab-badge">Game Dataset</span>
+                        </div>
+                        <div class="data-stat-grid">
+                            <div class="data-stat-card">
+                                <span class="stat-label">Games</span>
+                                <strong id="cumulative-total-games">0</strong>
+                            </div>
+                            <div class="data-stat-card">
+                                <span class="stat-label">Moves</span>
+                                <strong id="cumulative-total-moves">0</strong>
+                            </div>
+                            <div class="data-stat-card">
+                                <span class="stat-label">Avg Moves</span>
+                                <strong id="cumulative-avg-moves">0</strong>
+                            </div>
+                            <div class="data-stat-card">
+                                <span class="stat-label">Captures</span>
+                                <strong id="cumulative-captures">0</strong>
+                            </div>
+                        </div>
+                        <div class="data-actions">
+                            <button id="export-games-csv-btn" class="sidebar-btn secondary" type="button">
+                                <i class="fa-solid fa-table"></i> Games CSV
+                            </button>
+                            <button id="clear-games-btn" class="sidebar-btn danger" type="button">
+                                <i class="fa-solid fa-trash"></i> Clear Games
+                            </button>
+                        </div>
+                        <div class="data-table-wrap">
+                            <table class="data-log-table">
+                                <thead>
+                                    <tr>
+                                        <th>Game</th>
+                                        <th>Result</th>
+                                        <th>Moves</th>
+                                        <th>Time</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="game-summary-body">
+                                    <tr>
+                                        <td colspan="4">아직 완료된 경기 데이터가 없습니다.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+                </div>
+
+                <!-- Tab 3: Settings & Setup Panel -->
                 <div class="tab-content hidden" id="settings-tab">
                     <div class="settings-panel">
                         <div class="settings-group">

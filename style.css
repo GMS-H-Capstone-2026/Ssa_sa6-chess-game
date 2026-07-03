@@ -1141,3 +1141,536 @@ body.theme-cyber .square.dark {
         max-height: 450px;
     }
 }
+
+/* ==========================================================================
+   Classroom-ready layout overrides
+   The HTML in this project uses a Chess.com-style shell. These rules make that
+   shell usable for the data engineering lesson without changing the old styles.
+   ========================================================================== */
+
+body {
+    align-items: stretch;
+    padding: 0;
+}
+
+.app-container {
+    max-width: none;
+    min-height: 100vh;
+    display: grid;
+    grid-template-columns: 210px 1fr;
+    gap: 0;
+}
+
+.side-nav {
+    background: rgba(8, 11, 22, 0.92);
+    border-right: 1px solid var(--panel-border);
+    padding: 20px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+}
+
+.nav-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 8px 18px;
+    border-bottom: 1px solid var(--panel-border);
+    font-weight: 800;
+}
+
+.brand-icon {
+    color: var(--accent);
+    font-size: 1.4rem;
+}
+
+.brand-text {
+    font-size: 1.05rem;
+}
+
+.nav-links,
+.nav-footer {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.nav-footer {
+    margin-top: auto;
+}
+
+.nav-item {
+    color: var(--text-muted);
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 12px;
+    border-radius: 8px;
+    transition: background 0.2s ease, color 0.2s ease;
+}
+
+.nav-item:hover,
+.nav-item.active {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-primary);
+}
+
+.chess-main {
+    display: grid;
+    grid-template-columns: minmax(560px, 1fr) 390px;
+    gap: 24px;
+    padding: 24px;
+    min-width: 0;
+}
+
+.game-area-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    min-width: 0;
+}
+
+.eval-bar-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+
+.eval-bar-container .eval-bar-wrapper {
+    width: 18px;
+    height: 500px;
+    display: flex;
+    align-items: flex-end;
+    border-radius: 999px;
+}
+
+.eval-score {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.board-column {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    align-items: center;
+}
+
+.player-info-row {
+    width: min(500px, 80vw);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    padding: 10px 12px;
+}
+
+.player-info-row.active-player {
+    border-color: var(--accent);
+    box-shadow: 0 0 14px var(--accent-glow);
+}
+
+.player-profile,
+.player-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.player-meta {
+    flex-wrap: wrap;
+}
+
+.player-username {
+    font-weight: 800;
+}
+
+.player-rating,
+.player-status {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+}
+
+.player-status {
+    width: 100%;
+}
+
+.player-timer {
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    background: rgba(0, 0, 0, 0.28);
+    border-radius: 6px;
+    padding: 8px 10px;
+}
+
+.board-coords-y {
+    position: absolute;
+    left: 4px;
+    top: 24px;
+    bottom: 24px;
+    width: 16px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-around;
+    align-items: center;
+    color: rgba(255, 255, 255, 0.64);
+    font-size: 0.72rem;
+    font-weight: 700;
+    pointer-events: none;
+    z-index: 2;
+}
+
+.board-coords-x {
+    position: absolute;
+    left: 24px;
+    right: 24px;
+    bottom: 5px;
+    height: 16px;
+    display: flex;
+    justify-content: space-around;
+    color: rgba(255, 255, 255, 0.64);
+    font-size: 0.72rem;
+    font-weight: 700;
+    pointer-events: none;
+    z-index: 2;
+}
+
+.console-sidebar {
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    min-height: calc(100vh - 48px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.sidebar-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    border-bottom: 1px solid var(--panel-border);
+}
+
+.tab-btn {
+    border: 0;
+    background: transparent;
+    color: var(--text-muted);
+    padding: 14px 10px;
+    cursor: pointer;
+    font-weight: 800;
+}
+
+.tab-btn.active {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-primary);
+}
+
+.tab-content {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.tab-content.hidden,
+.hidden {
+    display: none;
+}
+
+.sidebar-panel-header,
+.quick-stats {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+}
+
+.sidebar-panel-header {
+    color: var(--text-primary);
+    font-weight: 800;
+}
+
+.quick-stats {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.status-indicator {
+    color: var(--accent);
+}
+
+.moves-container,
+.data-lab-panel,
+.settings-panel {
+    background: rgba(0, 0, 0, 0.22);
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.moves-table-header,
+.history-row {
+    display: grid;
+    grid-template-columns: 48px 1fr 1fr;
+    gap: 8px;
+}
+
+.moves-table-header {
+    padding: 10px 12px;
+    background: rgba(0, 0, 0, 0.22);
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    font-weight: 800;
+}
+
+.moves-list {
+    max-height: 190px;
+    overflow-y: auto;
+}
+
+.history-row {
+    padding: 9px 12px;
+}
+
+.game-navigation-controls,
+.sidebar-actions-panel,
+.settings-bottom-actions,
+.data-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.game-navigation-controls button,
+.sidebar-btn,
+.primary-green-btn,
+.modal-close-btn {
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-primary);
+    min-height: 40px;
+    padding: 9px 12px;
+    cursor: pointer;
+    font-weight: 800;
+}
+
+.game-navigation-controls button {
+    flex: 1;
+}
+
+.game-navigation-controls button:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.sidebar-btn,
+.primary-green-btn {
+    flex: 1;
+}
+
+.primary-green-btn {
+    background: #10b981;
+    border-color: #10b981;
+    color: #04130e;
+}
+
+.sidebar-btn.danger {
+    background: rgba(230, 57, 70, 0.18);
+    border-color: rgba(230, 57, 70, 0.5);
+}
+
+.data-lab-panel {
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.data-lab-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.data-lab-header h2 {
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.lab-badge {
+    color: #04130e;
+    background: #fbbf24;
+    border-radius: 999px;
+    padding: 3px 8px;
+    font-size: 0.68rem;
+    font-weight: 900;
+}
+
+.data-stat-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+}
+
+.data-stat-card {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    padding: 8px;
+}
+
+.stat-label {
+    display: block;
+    color: var(--text-muted);
+    font-size: 0.68rem;
+    margin-bottom: 4px;
+}
+
+.data-stat-card strong {
+    font-size: 1.1rem;
+}
+
+.data-table-wrap {
+    overflow: auto;
+    max-height: 180px;
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+}
+
+.data-log-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.76rem;
+}
+
+.data-log-table th,
+.data-log-table td {
+    padding: 8px;
+    text-align: left;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.data-log-table th {
+    color: var(--text-muted);
+    background: rgba(0, 0, 0, 0.22);
+}
+
+.settings-panel {
+    padding: 16px;
+}
+
+.settings-group {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    margin-bottom: 18px;
+}
+
+.settings-label {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.flat-segmented-control,
+.level-selectors {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.flat-segmented-control input,
+.level-selectors input {
+    display: none;
+}
+
+.flat-segmented-control label,
+.level-selectors label {
+    flex: 1;
+    min-width: 96px;
+    padding: 9px;
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-muted);
+    text-align: center;
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 800;
+}
+
+.flat-segmented-control input:checked + label,
+.level-selectors input:checked + label {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+}
+
+.modal-content {
+    background: #151a30;
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+}
+
+@media (max-width: 1100px) {
+    .app-container {
+        grid-template-columns: 1fr;
+    }
+
+    .side-nav {
+        position: static;
+        flex-direction: row;
+        align-items: center;
+        overflow-x: auto;
+    }
+
+    .nav-links,
+    .nav-footer {
+        flex-direction: row;
+    }
+
+    .chess-main {
+        grid-template-columns: 1fr;
+    }
+
+    .console-sidebar {
+        min-height: auto;
+    }
+}
+
+@media (max-width: 640px) {
+    .brand-text,
+    .nav-item span {
+        display: none;
+    }
+
+    .chess-main {
+        padding: 12px;
+    }
+
+    .game-area-wrapper {
+        gap: 8px;
+    }
+
+    .eval-bar-container .eval-bar-wrapper {
+        height: 320px;
+    }
+
+    .player-info-row {
+        width: min(320px, 86vw);
+    }
+
+    .data-stat-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
