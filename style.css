@@ -1353,7 +1353,7 @@ body {
 
 .sidebar-tabs {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     border-bottom: 1px solid var(--panel-border);
 }
 
@@ -1814,7 +1814,510 @@ body {
     color: #fff;
 }
 
-.sf-tag.sf-best { background: #10b981; }
-.sf-tag.sf-inaccuracy { background: #eab308; }
-.sf-tag.sf-mistake { background: #f4a261; }
-.sf-tag.sf-blunder { background: #e63946; }
+/* Category colors (shared by tags and symbols) */
+.sf-tag.sf-best,   .sf-sym.sf-best   { background: #6aa84f; }
+.sf-tag.sf-excellent, .sf-sym.sf-excellent { background: #85b84d; }
+.sf-tag.sf-good,   .sf-sym.sf-good   { background: #a3c15b; }
+.sf-tag.sf-inaccuracy, .sf-sym.sf-inaccuracy { background: #e6b800; }
+.sf-tag.sf-miss,   .sf-sym.sf-miss   { background: #e07b39; }
+.sf-tag.sf-mistake, .sf-sym.sf-mistake { background: #d98324; }
+.sf-tag.sf-blunder, .sf-sym.sf-blunder { background: #d1453b; }
+
+/* Chess.com-style review comparison table (white vs black) */
+.sf-review-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+.sf-review-table th {
+    text-align: center;
+    padding: 8px 6px;
+    font-size: 12px;
+    color: var(--text-muted);
+    font-weight: 700;
+    border-bottom: 1px solid var(--panel-border);
+}
+.sf-review-table th:first-child { text-align: left; }
+.sf-review-table td {
+    padding: 7px 6px;
+    border-bottom: 1px solid var(--panel-border);
+}
+.sf-review-table .sf-cat {
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+.sf-review-table .sf-num {
+    text-align: center;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+}
+.sf-accuracy-row td { font-size: 15px; }
+.sf-accuracy-row .sf-num strong { color: var(--accent); }
+.sf-avgloss-row td { color: var(--text-muted); }
+
+.sf-sym {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 18px;
+    padding: 0 5px;
+    margin-right: 8px;
+    border-radius: 5px;
+    font-size: 11px;
+    font-weight: 800;
+    color: #fff;
+}
+
+/* ==========================================================================
+   Auth gate (login / signup) + nav user chip
+   ========================================================================== */
+.auth-modal {
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 16px;
+    max-width: 380px;
+    align-items: stretch;
+    text-align: center;
+}
+
+.auth-brand {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    font-family: var(--font-header);
+    font-size: 1.3rem;
+    font-weight: 800;
+    color: var(--text-primary);
+}
+.auth-brand i { color: var(--accent); }
+
+.auth-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    background: rgba(0, 0, 0, 0.25);
+    padding: 5px;
+    border-radius: 12px;
+}
+.auth-tab {
+    padding: 9px 0;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-family: var(--font-header);
+    font-weight: 700;
+    font-size: 0.9rem;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+.auth-tab.active {
+    background: var(--accent);
+    color: #fff;
+    box-shadow: 0 2px 10px var(--accent-glow);
+}
+
+.auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+/* 명시도를 높여 전역 .hidden(display:none)이 auth-form에도 확실히 적용되게 한다. */
+.auth-form.hidden {
+    display: none;
+}
+.auth-form input {
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--panel-border);
+    background: rgba(0, 0, 0, 0.28);
+    color: var(--text-primary);
+    font-size: 0.95rem;
+    outline: none;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.auth-form input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+}
+.auth-form input::placeholder { color: var(--text-muted); }
+
+.auth-error {
+    min-height: 16px;
+    margin: -4px 0 0;
+    font-size: 0.8rem;
+    color: #ff6b6b;
+    text-align: left;
+}
+
+.auth-guest {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    text-decoration: underline;
+    font-size: 0.85rem;
+    cursor: pointer;
+    padding: 4px;
+}
+.auth-guest:hover { color: var(--text-primary); }
+
+.auth-note {
+    font-size: 0.72rem;
+    line-height: 1.5;
+    color: var(--text-muted);
+    margin: 0;
+}
+.auth-note i { color: #eab308; }
+
+/* Nav user chip */
+.nav-user {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px;
+    margin-bottom: 8px;
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.2);
+}
+.nav-user-name {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.nav-user-name i { color: var(--accent); margin-right: 4px; }
+.nav-logout {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    justify-content: center;
+    padding: 6px 8px;
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+.nav-logout:hover { color: var(--text-primary); border-color: var(--accent); }
+
+/* ==========================================================================
+   Stats mode: left-nav "통계" hides the board/console tabs, shows only stats
+   ========================================================================== */
+.chess-main.stats-mode {
+    grid-template-columns: 1fr;
+    justify-items: center;
+}
+.chess-main.stats-mode .game-area-wrapper {
+    display: none;
+}
+.chess-main.stats-mode .sidebar-tabs {
+    display: none;
+}
+.chess-main.stats-mode .console-sidebar {
+    width: 100%;
+    max-width: 860px;
+}
+
+/* Per-game analyze button in the game summary table */
+.sf-row-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 9px;
+    border: 1px solid var(--panel-border);
+    border-radius: 7px;
+    background: transparent;
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s ease;
+}
+.sf-row-btn:hover {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+}
+
+/* ==========================================================================
+   Home dashboard (entry point; cards launch play / review / stats)
+   ========================================================================== */
+.home-screen {
+    display: none; /* home-mode에서만 표시 */
+}
+.chess-main.home-mode {
+    grid-template-columns: 1fr;
+    align-items: start;
+}
+.chess-main.home-mode > .game-area-wrapper,
+.chess-main.home-mode > .console-sidebar {
+    display: none;
+}
+.chess-main.home-mode .home-screen {
+    display: block;
+    width: 100%;
+    padding: 10px 0 40px;
+}
+
+.home-inner {
+    max-width: 640px;
+    margin: 0 auto;
+}
+
+.home-header {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    margin-bottom: 24px;
+}
+.home-logo {
+    font-size: 3rem;
+    color: var(--accent);
+    filter: drop-shadow(0 0 14px var(--accent-glow));
+}
+.home-header h1 {
+    font-family: var(--font-header);
+    font-size: 1.9rem;
+    font-weight: 800;
+    color: var(--text-primary);
+}
+.home-tagline {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    margin-top: 2px;
+}
+
+.home-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+}
+.home-card {
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 16px;
+    padding: 20px;
+    box-shadow: var(--shadow-premium);
+}
+.home-card-play,
+.home-card-review {
+    grid-column: 1 / -1;
+}
+.home-card h2 {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--font-header);
+    font-size: 1.1rem;
+    color: var(--text-primary);
+    margin-bottom: 14px;
+}
+.home-card-review p {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    margin-bottom: 14px;
+}
+
+/* Action buttons (play / review) */
+.home-action {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    border: 1px solid var(--panel-border);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-primary);
+    font-size: 0.98rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.18s ease;
+}
+.home-action:last-child { margin-bottom: 0; }
+.home-action > span { flex: 1; text-align: left; }
+.home-action .go { color: var(--text-muted); font-size: 0.8rem; }
+.home-action:hover:not(:disabled) {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+    transform: translateX(2px);
+}
+.home-action:hover:not(:disabled) .go { color: #fff; }
+.home-action:disabled { opacity: 0.45; cursor: default; }
+.home-action.review { background: rgba(16, 185, 129, 0.12); border-color: rgba(16, 185, 129, 0.4); }
+
+/* Stat cards (streak, record) */
+.home-stat-card {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.home-stat-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    color: #fff;
+    background: var(--accent);
+    margin-bottom: 6px;
+}
+.home-stat-icon.streak { background: linear-gradient(135deg, #f97316, #ef4444); }
+.home-stat-icon.record { background: linear-gradient(135deg, #eab308, #f59e0b); }
+.home-stat-label {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+}
+.home-stat-value {
+    font-family: var(--font-header);
+    font-size: 1.7rem;
+    font-weight: 800;
+    color: var(--text-primary);
+}
+.home-stat-sub {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+@media (max-width: 560px) {
+    .home-grid { grid-template-columns: 1fr; }
+}
+
+/* ==========================================================================
+   Replay / review screen (step through a finished game)
+   ========================================================================== */
+.replay-screen {
+    display: none; /* replay-mode에서만 표시 */
+}
+.chess-main.replay-mode {
+    grid-template-columns: 1fr;
+    align-items: start;
+}
+.chess-main.replay-mode > .game-area-wrapper,
+.chess-main.replay-mode > .console-sidebar,
+.chess-main.replay-mode > .home-screen {
+    display: none;
+}
+.chess-main.replay-mode .replay-screen {
+    display: block;
+    width: 100%;
+    padding: 4px 0 30px;
+}
+
+.replay-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 18px;
+}
+.replay-header h2 {
+    font-family: var(--font-header);
+    font-size: 1.2rem;
+    color: var(--text-primary);
+}
+
+.replay-body {
+    display: flex;
+    gap: 24px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+.replay-side {
+    flex: 1;
+    min-width: 220px;
+    max-width: 340px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+.replay-status {
+    padding: 12px 14px;
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 10px;
+    font-weight: 700;
+    color: var(--text-primary);
+    text-align: center;
+}
+.replay-moves {
+    max-height: 320px;
+    overflow-y: auto;
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 10px;
+    padding: 8px;
+}
+.replay-row {
+    display: grid;
+    grid-template-columns: 32px 1fr 1fr;
+    gap: 4px;
+    align-items: center;
+    font-size: 0.9rem;
+}
+.replay-row .num { color: var(--text-muted); font-size: 0.8rem; }
+.replay-move {
+    padding: 4px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--text-primary);
+}
+.replay-move:hover { background: rgba(255, 255, 255, 0.06); }
+.replay-move.active { background: var(--accent); color: #fff; font-weight: 700; }
+
+.replay-controls {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+}
+.replay-controls button {
+    padding: 12px 0;
+    border: 1px solid var(--panel-border);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-primary);
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.replay-controls button:hover:not(:disabled) {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+.replay-controls button:disabled { opacity: 0.4; cursor: default; }
+
+/* Per-game action buttons cell (analyze + replay) */
+.review-cell {
+    display: flex;
+    gap: 6px;
+    white-space: nowrap;
+}
+.replay-row-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 9px;
+    border: 1px solid rgba(16, 185, 129, 0.4);
+    border-radius: 7px;
+    background: rgba(16, 185, 129, 0.12);
+    color: #10b981;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s ease;
+}
+.replay-row-btn:hover { background: #10b981; color: #fff; }

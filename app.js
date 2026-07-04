@@ -312,12 +312,20 @@ let timeElapsed = 0;
 let historyStates = []; // For Undo/Redo stack
 let currentStateIndex = -1;
 let pendingPromotionMove = null;
+let gameManuallyEnded = false; // 항복/무승부 등으로 수동 종료됐는지 (보드 잠금용)
 
 // DATA ENGINEERING STUDENT PROJECT
 // 이 배열은 체스 게임에서 발생하는 "원천 로그(raw event log)"를 담는 저장소입니다.
 // 학생 과제는 아래 TODO 함수들을 완성해서 이 로그를 수집, 저장, 변환, 출력하는 것입니다.
 const DATA_LOG_STORAGE_KEY = 'chessDataEngineeringMoveLogs';
 const GAME_SUMMARY_STORAGE_KEY = 'chessDataEngineeringGameSummaries';
+
+// 로그인한 사용자 아이디 (null이면 게스트 = 공용 데이터).
+// 사용자별로 데이터를 나눠 저장하기 위해 저장 키 뒤에 아이디를 덧붙인다.
+let currentUser = null;
+function userKey(baseKey) {
+    return currentUser ? `${baseKey}::${currentUser}` : baseKey;
+}
 // moveLogs: 말이 "한 번" 움직일 때마다 한 줄씩 쌓이는 상세 이동 로그 (이동 단위)
 // gameSummaries: 한 "판"이 끝날 때마다 한 줄씩 쌓이는 경기 요약 데이터 (경기 단위)
 let moveLogs = [];
@@ -392,21 +400,21 @@ function buildMoveLog(move, evalBefore, evalAfter, playerType) {
 
 function saveLogsToStorage() {
     // TODO 2: localStorage에 JSON 문자열로 저장되는 과정을 설명 주석으로 정리해보세요.
-    localStorage.setItem(DATA_LOG_STORAGE_KEY, JSON.stringify(moveLogs));
+    localStorage.setItem(userKey(DATA_LOG_STORAGE_KEY), JSON.stringify(moveLogs));
 }
 
 function saveGameSummariesToStorage() {
-    localStorage.setItem(GAME_SUMMARY_STORAGE_KEY, JSON.stringify(gameSummaries));
+    localStorage.setItem(userKey(GAME_SUMMARY_STORAGE_KEY), JSON.stringify(gameSummaries));
 }
 
 function loadLogsFromStorage() {
     // TODO 3: JSON.parse가 실패하는 상황을 가정하고 예외 처리를 개선해보세요.
-    const savedLogs = localStorage.getItem(DATA_LOG_STORAGE_KEY);
+    const savedLogs = localStorage.getItem(userKey(DATA_LOG_STORAGE_KEY));
     moveLogs = savedLogs ? JSON.parse(savedLogs) : [];
 }
 
 function loadGameSummariesFromStorage() {
-    const savedGames = localStorage.getItem(GAME_SUMMARY_STORAGE_KEY);
+    const savedGames = localStorage.getItem(userKey(GAME_SUMMARY_STORAGE_KEY));
     gameSummaries = savedGames ? JSON.parse(savedGames) : [];
 }
 
@@ -656,7 +664,7 @@ function renderStatsDashboard() {
     renderLearningReport();
 
     if (gameSummaries.length === 0) {
-        gameSummaryBody.innerHTML = '<tr><td colspan="8">아직 완료된 경기 데이터가 없습니다.</td></tr>';
+        gameSummaryBody.innerHTML = '<tr><td colspan="9">아직 완료된 경기 데이터가 없습니다.</td></tr>';
         return;
     }
 
@@ -674,6 +682,10 @@ function renderStatsDashboard() {
             <td>${gameSummary.gameMode}</td>
             <td>${startedTime}</td>
             <td>${endedTime}</td>
+            <td class="review-cell">
+                <button type="button" class="sf-row-btn" data-gameid="${gameSummary.gameId}"><i class="fa-solid fa-magnifying-glass-chart"></i> 분석</button>
+                <button type="button" class="replay-row-btn" data-gameid="${gameSummary.gameId}"><i class="fa-solid fa-play"></i> 복기</button>
+            </td>
         </tr>
     `;
     }).join('');
@@ -713,7 +725,7 @@ function renderLearningReport() {
 // ==========================================================================
 const StockfishAnalyzer = {
     worker: null,
-    depth: 12,
+    moveTimeMs: 500, // 국면당 탐색 시간 (go movetime)
     _pending: null,
     _readyResolve: null,
     _readyPromise: null,
@@ -721,15 +733,31 @@ const StockfishAnalyzer = {
     init() {
         if (this.worker) return this._readyPromise || Promise.resolve();
         this._readyPromise = new Promise((resolve, reject) => {
-            this._readyResolve = resolve;
+            let settled = false;
+            let readyTimer = null;
+            this._readyResolve = () => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(readyTimer);
+                console.log('[Stockfish] 엔진 준비 완료 (readyok)');
+                resolve();
+            };
             try {
                 this.worker = new Worker('stockfish.js');
             } catch (e) {
+                console.error('[Stockfish] Worker 생성 실패:', e);
                 reject(e);
                 return;
             }
             this.worker.onmessage = (e) => this._onLine(typeof e.data === 'string' ? e.data : String(e.data));
-            this.worker.onerror = (err) => { console.error('Stockfish worker error:', err && (err.message || err)); reject(err); };
+            this.worker.onerror = (err) => {
+                console.error('[Stockfish] Worker 오류:', err && (err.message || err));
+                if (!settled) { settled = true; clearTimeout(readyTimer); this.worker = null; this._readyPromise = null; reject(new Error('worker load error')); }
+            };
+            // 준비 타임아웃: readyok가 15초 안에 안 오면 실패 처리 (무한 대기 방지)
+            readyTimer = setTimeout(() => {
+                if (!settled) { settled = true; this._readyPromise = null; reject(new Error('엔진 준비 시간 초과')); }
+            }, 15000);
             this.worker.postMessage('uci');
         });
         return this._readyPromise;
@@ -754,16 +782,35 @@ const StockfishAnalyzer = {
         if (line.startsWith('bestmove')) {
             const p = this._pending;
             this._pending = null;
-            p.resolve({ scoreCp: p.scoreCp, isMate: p.isMate });
+            const parts = line.split(/\s+/);
+            p.resolve({ scoreCp: p.scoreCp, isMate: p.isMate, bestMove: parts[1] || '' });
         }
     },
 
     // 한 국면(FEN)을 평가해 "둘 차례인 쪽" 관점 centipawn 점수를 돌려준다.
+    // go movetime으로 탐색 시간을 제한하고, 그래도 응답이 없으면 강제로 마무리한다(멈춤 방지).
     evaluateFen(fen) {
         return new Promise((resolve) => {
-            this._pending = { resolve, scoreCp: 0, isMate: false };
+            let settled = false;
+            let hardTimer = null;
+            const finish = (val) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(hardTimer);
+                resolve(val);
+            };
+            this._pending = { resolve: finish, scoreCp: 0, isMate: false };
             this.worker.postMessage('position fen ' + fen);
-            this.worker.postMessage('go depth ' + this.depth);
+            this.worker.postMessage('go movetime ' + this.moveTimeMs);
+
+            // 안전장치: movetime 이후에도 bestmove가 안 오면 stop 후 현재 점수로 마무리한다.
+            hardTimer = setTimeout(() => {
+                if (settled) return;
+                const p = this._pending;
+                this._pending = null;
+                try { this.worker.postMessage('stop'); } catch (e) { /* ignore */ }
+                finish({ scoreCp: p ? p.scoreCp : 0, isMate: p ? p.isMate : false, bestMove: '' });
+            }, this.moveTimeMs + 3000);
         });
     },
 
@@ -783,62 +830,116 @@ function reconstructFens(orderedLogs) {
     return fens;
 }
 
-// 센티폰 손실을 사람이 읽는 등급으로 분류한다 (Lichess/Chess.com과 유사한 기준).
-function classifyLoss(lossCp) {
-    if (lossCp < 20) return 'best';
-    if (lossCp < 90) return 'inaccuracy';
-    if (lossCp < 200) return 'mistake';
-    return 'blunder';
+// 분류 순서/라벨/기호 (Chess.com 게임 리뷰 스타일).
+// 탁월(Brilliant)·매우좋아요(Great)는 희생수/유일수 판정(멀티PV·기물계산)이 필요해 이번엔 제외.
+const SF_CATEGORIES = [
+    { key: 'best', label: '최고', symbol: '★' },
+    { key: 'excellent', label: '훌륭함', symbol: '✓' },
+    { key: 'good', label: '좋은 수', symbol: '👍' },
+    { key: 'inaccuracy', label: '부정확', symbol: '?!' },
+    { key: 'miss', label: '놓친 수', symbol: '✗' },
+    { key: 'mistake', label: '실수', symbol: '?' },
+    { key: 'blunder', label: '블런더', symbol: '??' }
+];
+const SF_LABEL = Object.fromEntries(SF_CATEGORIES.map(c => [c.key, c.label]));
+
+// 한 수를 분류한다. cpLoss=센티폰 손실, isBest=엔진 1순위와 일치, evalBefore=수 두기 전 나의 형세.
+function classifyMove(cpLoss, isBest, evalBefore) {
+    if (isBest) return 'best';
+    if (cpLoss < 20) return 'excellent';
+    if (cpLoss < 50) return 'good';
+    if (cpLoss < 100) return 'inaccuracy';
+    // 100cp 이상: 이미 이기고 있었는데(+150cp↑) 크게 날렸으면 '놓친 수', 아주 크면 블런더, 그 외 실수
+    if (evalBefore >= 150) return 'miss';
+    if (cpLoss >= 200) return 'blunder';
+    return 'mistake';
 }
 
-const LOSS_LABEL_KO = { best: '좋은 수', inaccuracy: '부정확', mistake: '실수', blunder: '블런더' };
+// centipawn(둘 차례 관점) → 승률(0~100%). Lichess/Chess.com 계열 로지스틱 근사식.
+function winPercentFromCp(cp) {
+    return 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * cp)) - 1);
+}
+// 평균 승률 손실 → 정확성(0~100). Chess.com이 쓰는 역산 근사식.
+function accuracyFromAvgWinLoss(avgWinLoss) {
+    const acc = 103.1668 * Math.exp(-0.04354 * avgWinLoss) - 3.1669;
+    return Math.max(0, Math.min(100, acc));
+}
 
-// 각 FEN 평가(cpList, 둘 차례 관점)를 사람 관점 손실로 바꿔 정밀 리포트를 만든다.
-function computeStockfishReport(cpList, orderedLogs) {
-    // cpList[k] = fens[k] 평가. fens[0]은 백 차례라, k가 짝수면 백 차례 → White 관점으로 통일한다.
+function emptySide() {
+    const s = { moves: 0, avgLoss: 0, accuracy: 0, worst: [] };
+    SF_CATEGORIES.forEach(c => { s[c.key] = 0; });
+    return s;
+}
+
+// 각 FEN 평가(cpList)와 최선수(bestMoves)로 백·흑 양쪽을 채점한다.
+function computeStockfishReport(cpList, bestMoves, orderedLogs) {
+    // cpList[k] = fens[k] 평가(둘 차례 관점). fens[0]은 백 차례 → k 짝수면 백 차례. White 관점으로 통일.
     const cpWhite = cpList.map((cp, k) => (k % 2 === 0 ? cp : -cp));
 
-    const report = { analyzed: false, playerMoves: 0, best: 0, inaccuracy: 0, mistake: 0, blunder: 0, avgLoss: 0, worst: [] };
-    const playerLogs = orderedLogs.filter(l => l.playerType === 'player');
-    if (playerLogs.length === 0) return report;
-
-    const sign = playerLogs[0].color === 'white' ? 1 : -1; // 사람이 흑이면 부호를 뒤집는다
-    let lossSum = 0;
-    const moveLosses = [];
+    const sides = { white: emptySide(), black: emptySide() };
+    const lossSum = { white: 0, black: 0 };
+    const winLossSum = { white: 0, black: 0 };
+    let totalScored = 0;
 
     for (let i = 0; i < orderedLogs.length; i++) {
         const log = orderedLogs[i];
-        if (log.playerType !== 'player') continue;
-        if (i + 1 >= cpWhite.length) break; // 평가가 부족하면 방어적으로 중단
+        if (i + 1 >= cpWhite.length) break;
 
-        const beforeW = cpWhite[i];
-        const afterW = cpWhite[i + 1];
-        let loss = (beforeW - afterW) * sign;      // 사람 관점: 양수 = 형세가 나빠짐
-        loss = Math.max(0, Math.min(loss, 1000));  // 이득(음수)은 0, 상한 1000으로 클램프
+        const side = log.color; // 'white' | 'black'
+        const sign = side === 'white' ? 1 : -1;
+        const evalBefore = cpWhite[i] * sign;       // 이 수를 둔 쪽 관점
+        const evalAfter = cpWhite[i + 1] * sign;
 
-        lossSum += loss;
-        report.playerMoves++;
-        report[classifyLoss(loss)]++;
-        moveLosses.push({ san: log.san, moveNumber: log.moveNumber, loss: Math.round(loss) });
+        let cpLoss = Math.max(0, Math.min(evalBefore - evalAfter, 1000));
+        const winLoss = Math.max(0, winPercentFromCp(evalBefore) - winPercentFromCp(evalAfter));
+
+        const played = log.from + log.to; // 실제 둔 수(UCI 앞 4글자)
+        const isBest = bestMoves[i] && bestMoves[i].substring(0, 4) === played;
+        const category = classifyMove(cpLoss, isBest, evalBefore);
+
+        const s = sides[side];
+        s[category]++;
+        s.moves++;
+        lossSum[side] += cpLoss;
+        winLossSum[side] += winLoss;
+        s.worst.push({ san: log.san, moveNumber: log.moveNumber, loss: Math.round(cpLoss), category });
+        totalScored++;
     }
 
-    report.analyzed = true;
-    report.avgLoss = report.playerMoves ? Math.round(lossSum / report.playerMoves) : 0;
-    report.worst = moveLosses.sort((a, b) => b.loss - a.loss).slice(0, 3);
-    return report;
+    for (const side of ['white', 'black']) {
+        const s = sides[side];
+        s.avgLoss = s.moves ? Math.round(lossSum[side] / s.moves) : 0;
+        s.accuracy = s.moves ? Math.round(accuracyFromAvgWinLoss(winLossSum[side] / s.moves) * 10) / 10 : 0;
+        s.worst = s.worst
+            .filter(w => ['miss', 'mistake', 'blunder'].includes(w.category))
+            .sort((a, b) => b.loss - a.loss)
+            .slice(0, 3);
+    }
+
+    return { analyzed: totalScored > 0, totalScored, white: sides.white, black: sides.black };
 }
 
 let stockfishBusy = false;
-async function analyzeCurrentGameWithStockfish() {
+
+// 특정 gameId의 저장된 이동 로그로 Stockfish 분석을 돌린다. (현재 판/과거 판 모두 지원)
+async function analyzeGameById(gameId, label) {
     if (stockfishBusy) return;
     const statusEl = document.getElementById('sf-status');
     const btn = document.getElementById('sf-analyze-btn');
 
-    const orderedLogs = getCurrentGameLogs().slice().sort((a, b) => a.moveNumber - b.moveNumber);
-    if (!orderedLogs.some(l => l.playerType === 'player')) {
-        if (statusEl) statusEl.textContent = '분석할 내 수가 없습니다. VS Computer로 몇 수 두어 보세요.';
+    const orderedLogs = moveLogs
+        .filter(l => l.gameId === gameId)
+        .slice()
+        .sort((a, b) => a.moveNumber - b.moveNumber);
+
+    if (orderedLogs.length === 0) {
+        if (statusEl) statusEl.textContent = '이 경기에는 분석할 이동 기록이 없습니다.';
         return;
     }
+
+    // 분석 결과 패널이 화면에 보이도록 스크롤 (과거 경기 목록에서 눌렀을 때)
+    const panel = document.querySelector('.sf-panel');
+    if (panel && panel.scrollIntoView) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
     stockfishBusy = true;
     if (btn) btn.disabled = true;
@@ -848,15 +949,17 @@ async function analyzeCurrentGameWithStockfish() {
 
         const fens = reconstructFens(orderedLogs);
         const cpList = [];
+        const bestMoves = [];
         for (let k = 0; k < fens.length; k++) {
-            if (statusEl) statusEl.textContent = `분석 중... ${k + 1}/${fens.length} 국면`;
+            if (statusEl) statusEl.textContent = `${label || ''} 분석 중... ${k + 1}/${fens.length} 국면`;
             const res = await StockfishAnalyzer.evaluateFen(fens[k]);
             cpList.push(res.scoreCp);
+            bestMoves.push(res.bestMove);
         }
 
-        const report = computeStockfishReport(cpList, orderedLogs);
+        const report = computeStockfishReport(cpList, bestMoves, orderedLogs);
         renderStockfishReport(report);
-        if (statusEl) statusEl.textContent = `분석 완료 (depth ${StockfishAnalyzer.depth}, ${report.playerMoves}수 채점).`;
+        if (statusEl) statusEl.textContent = `${label || ''} 분석 완료 (${report.totalScored}수 채점).`;
     } catch (err) {
         console.error('Stockfish 분석 실패:', err);
         if (statusEl) statusEl.textContent = '분석 실패: 엔진(stockfish.js)을 불러오지 못했습니다.';
@@ -864,6 +967,12 @@ async function analyzeCurrentGameWithStockfish() {
         stockfishBusy = false;
         if (btn) btn.disabled = false;
     }
+}
+
+// "이번 판 분석" 버튼: 현재 진행 중인 경기를 분석.
+function analyzeCurrentGameWithStockfish() {
+    if (!currentGameId) return;
+    analyzeGameById(currentGameId, '이번 판');
 }
 
 function renderStockfishReport(report) {
@@ -877,19 +986,48 @@ function renderStockfishReport(report) {
         return;
     }
 
+    const w = report.white;
+    const b = report.black;
+
+    // 백 vs 흑 비교 테이블 (Chess.com 게임 리뷰 스타일)
+    const categoryRows = SF_CATEGORIES.map(c => `
+        <tr class="sf-row sf-row-${c.key}">
+            <td class="sf-cat"><span class="sf-sym sf-${c.key}">${c.symbol}</span> ${c.label}</td>
+            <td class="sf-num">${w[c.key]}</td>
+            <td class="sf-num">${b[c.key]}</td>
+        </tr>
+    `).join('');
+
     grid.innerHTML = `
-        <div class="data-stat-card"><span class="stat-label">채점한 내 수</span><strong>${report.playerMoves}</strong></div>
-        <div class="data-stat-card"><span class="stat-label">평균 손실(cp)</span><strong>${report.avgLoss}</strong></div>
-        <div class="data-stat-card"><span class="stat-label">블런더</span><strong>${report.blunder}</strong></div>
-        <div class="data-stat-card"><span class="stat-label">실수</span><strong>${report.mistake}</strong></div>
-        <div class="data-stat-card"><span class="stat-label">부정확</span><strong>${report.inaccuracy}</strong></div>
-        <div class="data-stat-card"><span class="stat-label">좋은 수</span><strong>${report.best}</strong></div>
+        <table class="sf-review-table">
+            <thead>
+                <tr><th></th><th>백 (White)</th><th>흑 (Black)</th></tr>
+            </thead>
+            <tbody>
+                <tr class="sf-accuracy-row">
+                    <td class="sf-cat">정확성</td>
+                    <td class="sf-num"><strong>${w.accuracy}</strong></td>
+                    <td class="sf-num"><strong>${b.accuracy}</strong></td>
+                </tr>
+                ${categoryRows}
+                <tr class="sf-avgloss-row">
+                    <td class="sf-cat">평균 손실(cp)</td>
+                    <td class="sf-num">${w.avgLoss}</td>
+                    <td class="sf-num">${b.avgLoss}</td>
+                </tr>
+            </tbody>
+        </table>
     `;
 
     if (worstEl) {
-        worstEl.innerHTML = report.worst.length
+        const combined = [
+            ...w.worst.map(x => ({ ...x, side: '백' })),
+            ...b.worst.map(x => ({ ...x, side: '흑' }))
+        ].sort((a, c) => c.loss - a.loss).slice(0, 4);
+
+        worstEl.innerHTML = combined.length
             ? '<h4><i class="fa-solid fa-arrow-trend-down"></i> 가장 아쉬웠던 수</h4><ul>' +
-              report.worst.map(w => `<li><strong>${w.san}</strong> — ${w.loss}cp 손실 <span class="sf-tag sf-${classifyLoss(w.loss)}">${LOSS_LABEL_KO[classifyLoss(w.loss)]}</span></li>`).join('') +
+              combined.map(x => `<li><strong>${x.side} ${x.san}</strong> — ${x.loss}cp 손실 <span class="sf-tag sf-${x.category}">${SF_LABEL[x.category]}</span></li>`).join('') +
               '</ul>'
             : '';
     }
@@ -1048,7 +1186,7 @@ function getRowCol(squareName) {
 
 // 7. Interactive Game Input Handling
 function handleSquareClick(e) {
-    if (game.game_over()) return;
+    if (game.game_over() || gameManuallyEnded) return;
     if (gameMode === 'ai' && game.turn() !== playerColor) return;
 
     let target = e.target;
@@ -1170,7 +1308,7 @@ let draggedPiece = null;
 let draggedFromSquare = null;
 
 function handleDragStart(e) {
-    if (game.game_over()) { e.preventDefault(); return; }
+    if (game.game_over() || gameManuallyEnded) { e.preventDefault(); return; }
     if (gameMode === 'ai' && game.turn() !== playerColor) { e.preventDefault(); return; }
     
     const pieceEl = e.currentTarget;
@@ -1228,6 +1366,7 @@ function handleDrop(e) {
 
 // 9. Move Execution & Evaluation
 function makeMove(from, to, promotion = null) {
+    if (gameManuallyEnded) return;
     // Check if pawn promotion is triggered
     const isPromotion = checkPromotion(from, to);
     if (isPromotion && !promotion) {
@@ -1343,6 +1482,12 @@ function triggerAIMove() {
         const delay = Math.max(0, 400 - duration);
 
         setTimeout(() => {
+            // 사고 중 사람이 항복/무승부로 게임을 끝냈다면 AI 수를 두지 않는다.
+            if (gameManuallyEnded) {
+                opponentStatus.textContent = '대기 중';
+                opponentStatus.classList.remove('evaluating');
+                return;
+            }
             if (bestMove) {
                 const evalBefore = evaluateBoard(game.board());
                 const move = game.move({
@@ -1833,21 +1978,73 @@ function checkGameOver() {
         }
         
         finishCurrentGame(title, reason, outcome);
-        showGameOverOverlay(title, reason, isWin);
+        // 무승부 계열이면 악수 아이콘, 아니면 승/패 연출
+        showGameOverOverlay(title, reason, outcome === 'draw' ? 'draw' : isWin);
         return true;
     }
     return false;
 }
 
-function showGameOverOverlay(title, reason, isWin) {
+// 항복: 사람이 게임을 포기한다. AI전에서는 사람 패배, PvP에서는 현재 차례인 쪽이 패배.
+function resignGame() {
+    if (game.game_over() || gameManuallyEnded || !currentGameId) return;
+    if (!confirm('정말 기권하시겠습니까?')) return;
+
+    gameManuallyEnded = true;
+    stopTimer();
+    ConfettiEffect.stop();
+
+    const title = '기권 (Resign)';
+    let reason;
+    let outcome;
+    let overlayResult;
+
+    if (gameMode === 'ai') {
+        reason = '기권했습니다. AI의 승리입니다. 다음 판에 다시 도전하세요!';
+        outcome = 'loss';
+        overlayResult = false;
+    } else {
+        const resigningSide = game.turn(); // 현재 차례인 쪽이 기권
+        const winner = resigningSide === 'w' ? '흑(Black)' : '백(White)';
+        const loser = resigningSide === 'w' ? '백(White)' : '흑(Black)';
+        reason = `${loser}이(가) 기권하여 ${winner}의 승리입니다.`;
+        outcome = 'decisive';
+        overlayResult = true;
+    }
+
+    finishCurrentGame(title, reason, outcome);
+    showGameOverOverlay(title, reason, overlayResult);
+}
+
+// 무승부 합의: PvP 전용. AI전에서는 버튼이 숨겨져 호출되지 않는다.
+function offerDraw() {
+    if (gameMode === 'ai') return; // AI전에서는 무승부 요청 불가
+    if (game.game_over() || gameManuallyEnded || !currentGameId) return;
+    if (!confirm('무승부에 합의하시겠습니까?')) return;
+
+    gameManuallyEnded = true;
+    stopTimer();
+    ConfettiEffect.stop();
+
+    const title = '무승부 합의 (Draw)';
+    const reason = '양측 합의로 무승부가 되었습니다.';
+    finishCurrentGame(title, reason, 'draw');
+    showGameOverOverlay(title, reason, 'draw');
+}
+
+// result: true = 승리, false = 패배, 'draw' = 무승부
+function showGameOverOverlay(title, reason, result) {
     document.getElementById('game-over-title').textContent = title;
     document.getElementById('game-over-reason').textContent = reason;
     document.getElementById('final-moves').textContent = Math.ceil(game.history().length / 2);
     document.getElementById('final-time').textContent = gameTimer.textContent;
-    
-    // Trophy icon update
+
     const icon = document.getElementById('game-over-icon');
-    if (isWin) {
+    if (result === 'draw') {
+        icon.className = 'fa-solid fa-handshake';
+        icon.style.color = '#a0aec0';
+        // 무승부는 축하/패배 사운드 없이 조용히 마무리
+    } else if (result) {
         icon.className = 'fa-solid fa-trophy';
         icon.style.color = '#ffd166';
         ConfettiEffect.start();
@@ -1857,7 +2054,7 @@ function showGameOverOverlay(title, reason, isWin) {
         icon.style.color = '#e63946';
         SoundController.playGameOver(false);
     }
-    
+
     document.getElementById('game-over-overlay').classList.remove('hidden');
 }
 
@@ -1869,10 +2066,15 @@ function startNewGame() {
     game = new Chess();
     selectedSquare = null;
     pendingPromotionMove = null;
-    
+    gameManuallyEnded = false;
+
     // Read game mode & setup details
     const activeMode = document.querySelector('input[name="game-mode"]:checked').value;
     gameMode = activeMode;
+
+    // 무승부(드로우) 요청은 사람끼리(PvP) 둘 때만 노출한다.
+    const drawBtn = document.getElementById('draw-claim-btn');
+    if (drawBtn) drawBtn.style.display = (gameMode === 'pvp') ? '' : 'none';
     
     const activeDiff = parseInt(document.querySelector('input[name="ai-difficulty"]:checked').value);
     aiDifficulty = activeDiff;
@@ -1955,19 +2157,298 @@ function setActiveNav(navId) {
     if (el) el.classList.add('active');
 }
 
-const navPlay = document.getElementById('nav-play');
-if (navPlay) navPlay.addEventListener('click', (event) => {
+// 저장된 경기 날짜로 연속 플레이 일수를 계산한다 (마지막 플레이 날부터 거꾸로 이어지는 일수).
+function getConsecutiveDays() {
+    const days = [...new Set(
+        gameSummaries.map(s => (s.endedAt || '').slice(0, 10)).filter(Boolean)
+    )].sort().reverse();
+    if (days.length === 0) return 0;
+
+    let streak = 1;
+    let prev = new Date(days[0]);
+    for (let i = 1; i < days.length; i++) {
+        const cur = new Date(days[i]);
+        const diffDays = Math.round((prev - cur) / 86400000);
+        if (diffDays === 1) { streak++; prev = cur; }
+        else break;
+    }
+    return streak;
+}
+
+// 홈 대시보드 카드 값을 채운다 (연속 일수, AI전 전적, 최근 경기 리뷰 버튼).
+function renderHome() {
+    const greetEl = document.getElementById('home-greeting');
+    if (greetEl) {
+        greetEl.textContent = currentUser
+            ? `${currentUser}님, 오늘도 한 판 두고 분석해 볼까요?`
+            : '체스를 두고, 데이터로 실력을 분석하세요.';
+    }
+
+    const streakEl = document.getElementById('home-streak');
+    if (streakEl) streakEl.textContent = `${getConsecutiveDays()}일`;
+
+    let w = 0, d = 0, l = 0;
+    gameSummaries.forEach(s => {
+        if (s.gameMode !== 'ai') return;
+        if (s.outcome === 'win') w++;
+        else if (s.outcome === 'loss') l++;
+        else if (s.outcome === 'draw') d++;
+    });
+    const recordEl = document.getElementById('home-record');
+    if (recordEl) recordEl.textContent = `${w}-${d}-${l}`;
+    const totalEl = document.getElementById('home-total');
+    if (totalEl) totalEl.textContent = `총 ${gameSummaries.length}경기`;
+
+    // 게임 리뷰 버튼: 최근 완료 경기가 있으면 그 경기를 가리키고, 없으면 비활성화.
+    const reviewBtn = document.getElementById('home-review-btn');
+    const reviewLabel = document.getElementById('home-review-label');
+    const last = gameSummaries[gameSummaries.length - 1];
+    if (reviewBtn && reviewLabel) {
+        if (last) {
+            reviewBtn.disabled = false;
+            reviewLabel.textContent = `최근 경기 분석 (게임 ${last.gameId.replace('game-', '')})`;
+        } else {
+            reviewBtn.disabled = true;
+            reviewLabel.textContent = '완료된 경기가 아직 없어요';
+        }
+    }
+
+    // "바로 시작" 버튼: 진행 중인 게임이 있으면 "이어서 하기"로 표시.
+    const playSpan = document.querySelector('#home-play-btn span');
+    if (playSpan) playSpan.textContent = isGameInProgress() ? '이어서 하기 (진행 중)' : '바로 시작 (기본 설정)';
+}
+
+// 여러 화면 모드 클래스를 한 번에 정리한다.
+function clearMainModes() {
+    const main = document.querySelector('.chess-main');
+    if (main) main.classList.remove('home-mode', 'stats-mode', 'replay-mode');
+}
+
+// 홈 모드: 게임판/콘솔을 숨기고 대시보드만 보여준다. 게임은 아직 시작하지 않는다.
+function enterHomeMode() {
+    clearMainModes();
+    const main = document.querySelector('.chess-main');
+    if (main) main.classList.add('home-mode');
+    renderHome();
+    setActiveNav('nav-home');
+}
+
+// 플레이 모드: 게임판 + 오른쪽 콘솔(Play/Settings 탭)을 보여준다. 홈/통계는 숨긴다.
+function enterPlayMode(tabId = 'game-tab') {
+    clearMainModes();
+    const statsTab = document.getElementById('stats-tab');
+    if (statsTab) statsTab.classList.add('hidden');
+    activateConsoleTab(tabId); // game-tab 또는 settings-tab 활성화
+    setActiveNav('nav-home'); // 별도 Play 탭이 없으므로 Home을 활성 표시로 둔다
+}
+
+// 통계 모드: 게임판과 콘솔 탭바를 숨기고 통계(stats-tab)만 크게 보여준다.
+function enterStatsMode() {
+    clearMainModes();
+    const main = document.querySelector('.chess-main');
+    if (main) main.classList.add('stats-mode');
+    ['game-tab', 'settings-tab'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.add('hidden');
+    });
+    const statsTab = document.getElementById('stats-tab');
+    if (statsTab) statsTab.classList.remove('hidden');
+    renderStatsDashboard(); // 열 때 최신 데이터로 갱신
+    setActiveNav('nav-stats');
+}
+
+// 홈의 "게임 시작" 버튼: 새 게임을 시작하고 플레이 화면으로 전환한다.
+function startPlaying() {
+    startNewGame();
+    enterPlayMode('game-tab');
+}
+
+const navHome = document.getElementById('nav-home');
+if (navHome) navHome.addEventListener('click', (event) => {
     event.preventDefault();
-    activateConsoleTab('game-tab');
-    setActiveNav('nav-play');
+    enterHomeMode();
 });
 
 const navStats = document.getElementById('nav-stats');
 if (navStats) navStats.addEventListener('click', (event) => {
     event.preventDefault();
-    activateConsoleTab('stats-tab');
-    setActiveNav('nav-stats');
-    renderStatsDashboard(); // 열 때 최신 데이터로 갱신
+    enterStatsMode();
+});
+
+// 진행 중인 게임이 있으면 이어서, 없으면 새로 시작 (Play 탭이 없으므로 이어하기 경로 제공)
+function isGameInProgress() {
+    return !!currentGameId && !game.game_over() && !gameManuallyEnded;
+}
+const homePlayBtn = document.getElementById('home-play-btn');
+if (homePlayBtn) homePlayBtn.addEventListener('click', () => {
+    if (isGameInProgress()) enterPlayMode('game-tab');
+    else startPlaying();
+});
+
+// 홈 카드의 "봇과 플레이 / 2인 플레이" — 모드를 설정하고 바로 시작한다.
+document.querySelectorAll('.home-action[data-play]').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const mode = btn.dataset.play; // 'ai' | 'pvp'
+        const radio = document.querySelector(`input[name="game-mode"][value="${mode}"]`);
+        if (radio) radio.checked = true; // startNewGame이 이 값을 읽어 게임을 만든다
+        startPlaying();
+    });
+});
+
+// 홈 카드의 "게임 리뷰" — 통계 화면으로 이동해 최근 경기를 Stockfish로 분석한다.
+const homeReviewBtn = document.getElementById('home-review-btn');
+if (homeReviewBtn) homeReviewBtn.addEventListener('click', () => {
+    const last = gameSummaries[gameSummaries.length - 1];
+    if (!last) return;
+    enterStatsMode();
+    analyzeGameById(last.gameId, `게임 ${last.gameId.replace('game-', '')}`);
+});
+
+// ==========================================================================
+//  리플레이(복기): 저장된 완료 경기를 한 수씩 넘겨보며 복기한다.
+//  라이브 game 객체를 건드리지 않도록 전용 렌더 함수로 국면을 그린다.
+// ==========================================================================
+let replayFens = [];   // [시작국면, 1수후, 2수후, ...] FEN 목록
+let replayMoves = [];  // [{ san, from, to, color }, ...]
+let replayIndex = 0;   // 현재 보고 있는 국면 인덱스 (0 = 시작 위치)
+
+// FEN 하나를 replay 보드에 그린다 (백이 아래인 고정 방향, 클릭/드래그 없음).
+function renderReplayBoard(fen, lastMove) {
+    const boardEl = document.getElementById('replay-board');
+    if (!boardEl) return;
+    const temp = new Chess(fen);
+    const boardState = temp.board();
+    boardEl.innerHTML = '';
+    for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+            const squareName = getSquareName(r, c);
+            const sq = document.createElement('div');
+            sq.classList.add('square', ((r + c) % 2 === 0) ? 'light' : 'dark');
+            if (lastMove && (squareName === lastMove.from || squareName === lastMove.to)) {
+                sq.classList.add('last-move');
+            }
+            const piece = boardState[r][c];
+            if (piece) {
+                const pe = document.createElement('div');
+                pe.classList.add('piece', piece.color === 'w' ? 'white' : 'black');
+                pe.innerHTML = getPieceSVG(piece.type, piece.color);
+                sq.appendChild(pe);
+            }
+            boardEl.appendChild(sq);
+        }
+    }
+}
+
+function renderReplayMoveList() {
+    const el = document.getElementById('replay-moves');
+    if (!el) return;
+    let html = '';
+    for (let i = 0; i < replayMoves.length; i += 2) {
+        const no = i / 2 + 1;
+        const wm = replayMoves[i];
+        const bm = replayMoves[i + 1];
+        html += `<div class="replay-row"><span class="num">${no}.</span>` +
+            `<span class="replay-move" data-idx="${i}">${wm ? wm.san : ''}</span>` +
+            `<span class="replay-move" data-idx="${i + 1}">${bm ? bm.san : ''}</span></div>`;
+    }
+    el.innerHTML = html;
+    el.querySelectorAll('.replay-move').forEach(cell => {
+        cell.addEventListener('click', () => {
+            if (!cell.textContent) return;
+            replayGoto(Number(cell.dataset.idx) + 1); // 그 수를 둔 "직후" 국면
+        });
+    });
+}
+
+function renderReplayStep() {
+    const lastMove = replayIndex > 0 ? replayMoves[replayIndex - 1] : null;
+    renderReplayBoard(replayFens[replayIndex], lastMove);
+
+    const statusEl = document.getElementById('replay-status');
+    if (statusEl) {
+        if (replayIndex === 0) {
+            statusEl.textContent = `시작 위치 (총 ${replayMoves.length}수)`;
+        } else {
+            const m = replayMoves[replayIndex - 1];
+            statusEl.textContent = `${replayIndex} / ${replayMoves.length}수 — ${m.color === 'w' ? '백' : '흑'} ${m.san}`;
+        }
+    }
+
+    document.querySelectorAll('.replay-move').forEach(el => {
+        el.classList.toggle('active', Number(el.dataset.idx) === replayIndex - 1);
+    });
+
+    const atStart = replayIndex === 0;
+    const atEnd = replayIndex >= replayFens.length - 1;
+    const setDisabled = (id, v) => { const b = document.getElementById(id); if (b) b.disabled = v; };
+    setDisabled('replay-first', atStart);
+    setDisabled('replay-prev', atStart);
+    setDisabled('replay-next', atEnd);
+    setDisabled('replay-last', atEnd);
+}
+
+function replayGoto(idx) {
+    replayIndex = Math.max(0, Math.min(idx, replayFens.length - 1));
+    renderReplayStep();
+}
+
+// 리플레이 모드로 전환 (게임판/콘솔/홈/통계 숨기고 복기 화면만 표시).
+function enterReplayMode() {
+    clearMainModes();
+    const main = document.querySelector('.chess-main');
+    if (main) main.classList.add('replay-mode');
+    setActiveNav('nav-stats'); // 통계에서 진입하므로 통계를 활성 표시로 둔다
+}
+
+// 특정 gameId의 저장된 로그를 재생해 복기를 시작한다.
+function startReplay(gameId) {
+    const logs = moveLogs
+        .filter(l => l.gameId === gameId)
+        .slice()
+        .sort((a, b) => a.moveNumber - b.moveNumber);
+
+    if (logs.length === 0) {
+        alert('이 경기에는 복기할 이동 기록이 없습니다.');
+        return;
+    }
+
+    const replay = new Chess();
+    replayFens = [replay.fen()];
+    replayMoves = [];
+    for (const log of logs) {
+        const mv = replay.move(log.san);
+        if (!mv) break; // 손상된 로그 방어
+        replayFens.push(replay.fen());
+        replayMoves.push({ san: mv.san, from: mv.from, to: mv.to, color: mv.color });
+    }
+    replayIndex = 0;
+
+    const titleEl = document.getElementById('replay-title');
+    if (titleEl) titleEl.textContent = `복기 — 게임 ${gameId.replace('game-', '')}`;
+
+    enterReplayMode();
+    renderReplayMoveList();
+    renderReplayStep();
+}
+
+// 복기 화면 컨트롤 배선
+const replayBackBtn = document.getElementById('replay-back-btn');
+if (replayBackBtn) replayBackBtn.addEventListener('click', enterStatsMode);
+const rFirst = document.getElementById('replay-first');
+if (rFirst) rFirst.addEventListener('click', () => replayGoto(0));
+const rPrev = document.getElementById('replay-prev');
+if (rPrev) rPrev.addEventListener('click', () => replayGoto(replayIndex - 1));
+const rNext = document.getElementById('replay-next');
+if (rNext) rNext.addEventListener('click', () => replayGoto(replayIndex + 1));
+const rLast = document.getElementById('replay-last');
+if (rLast) rLast.addEventListener('click', () => replayGoto(replayFens.length - 1));
+
+// 경기 목록 표의 "복기" 버튼 (이벤트 위임)
+const gameSummaryBodyReplay = document.getElementById('game-summary-body');
+if (gameSummaryBodyReplay) gameSummaryBodyReplay.addEventListener('click', (e) => {
+    const btn = e.target.closest('.replay-row-btn');
+    if (!btn) return;
+    startReplay(btn.dataset.gameid);
 });
 
 // UI Modal toggles
@@ -1994,6 +2475,9 @@ document.getElementById('nav-sound').addEventListener('click', (event) => {
 document.getElementById('new-game-btn').addEventListener('click', startNewGame);
 document.getElementById('restart-game-btn').addEventListener('click', startNewGame);
 
+document.getElementById('resign-btn').addEventListener('click', resignGame);
+document.getElementById('draw-claim-btn').addEventListener('click', offerDraw);
+
 document.getElementById('undo-btn').addEventListener('click', performUndo);
 document.getElementById('redo-btn').addEventListener('click', performRedo);
 exportCsvBtn.addEventListener('click', downloadCSV);
@@ -2003,6 +2487,15 @@ clearGamesBtn.addEventListener('click', clearGameSummaries);
 
 const sfAnalyzeBtn = document.getElementById('sf-analyze-btn');
 if (sfAnalyzeBtn) sfAnalyzeBtn.addEventListener('click', analyzeCurrentGameWithStockfish);
+
+// 경기 목록 표의 "분석" 버튼 (이벤트 위임 — 표가 다시 그려져도 계속 동작)
+const gameSummaryBodyEl = document.getElementById('game-summary-body');
+if (gameSummaryBodyEl) gameSummaryBodyEl.addEventListener('click', (e) => {
+    const btn = e.target.closest('.sf-row-btn');
+    if (!btn) return;
+    const gameId = btn.dataset.gameid;
+    analyzeGameById(gameId, `게임 ${gameId.replace('game-', '')}`);
+});
 
 // Theme Picker Logic
 document.querySelectorAll('.theme-option').forEach(opt => {
@@ -2033,10 +2526,164 @@ document.addEventListener('keydown', (e) => {
 });
 
 // Start Game automatically on load
-window.addEventListener('load', () => {
+// ==========================================================================
+//  간단 로그인 / 회원가입 (클라이언트 전용 — localStorage 기반)
+//  ⚠️ 서버가 없는 정적 사이트라 "진짜" 보안이 아니다. 흐름 학습 + 사용자별 데이터 분리 용도.
+// ==========================================================================
+const USERS_STORAGE_KEY = 'chessUsers';
+const CURRENT_USER_KEY = 'chessCurrentUser';
+
+function getUsers() {
+    try {
+        return JSON.parse(localStorage.getItem(USERS_STORAGE_KEY)) || {};
+    } catch (e) {
+        return {};
+    }
+}
+function saveUsers(users) {
+    localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
+}
+
+// 비밀번호를 평문으로 저장하지 않도록 해시한다.
+// 보안 컨텍스트(localhost 등)에서는 SHA-256, 불가하면(file:// 등) 간단한 대체 해시.
+async function hashPassword(password) {
+    try {
+        if (typeof crypto !== 'undefined' && crypto.subtle) {
+            const data = new TextEncoder().encode(password);
+            const buf = await crypto.subtle.digest('SHA-256', data);
+            return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+    } catch (e) { /* 대체 해시로 넘어감 */ }
+    let h = 5381;
+    for (let i = 0; i < password.length; i++) h = ((h << 5) + h + password.charCodeAt(i)) | 0;
+    return 'fallback-' + (h >>> 0).toString(16);
+}
+
+async function signupUser(username, password, password2) {
+    username = (username || '').trim();
+    if (username.length < 2) return { ok: false, error: '아이디는 2자 이상이어야 합니다.' };
+    if ((password || '').length < 4) return { ok: false, error: '비밀번호는 4자 이상이어야 합니다.' };
+    if (password !== password2) return { ok: false, error: '비밀번호가 서로 다릅니다.' };
+    const users = getUsers();
+    if (users[username]) return { ok: false, error: '이미 존재하는 아이디입니다.' };
+    users[username] = { username, passHash: await hashPassword(password), createdAt: new Date().toISOString() };
+    saveUsers(users);
+    return { ok: true };
+}
+
+async function loginUser(username, password) {
+    username = (username || '').trim();
+    const user = getUsers()[username];
+    if (!user) return { ok: false, error: '존재하지 않는 아이디입니다.' };
+    if (await hashPassword(password) !== user.passHash) return { ok: false, error: '비밀번호가 올바르지 않습니다.' };
+    return { ok: true };
+}
+
+// 로그인/게스트 전환: 사용자 설정 → 그 사용자 데이터 로드 → 화면 갱신 → 홈 화면.
+function enterAsUser(username) {
+    currentUser = username || null; // null이면 게스트(공용 데이터)
+    if (currentUser) localStorage.setItem(CURRENT_USER_KEY, currentUser);
+    else localStorage.removeItem(CURRENT_USER_KEY);
+
     loadLogsFromStorage();
     loadGameSummariesFromStorage();
     renderDataLab();
     renderStatsDashboard();
-    startNewGame();
+    renderAuthState();
+    hideAuthOverlay();
+    enterHomeMode(); // 바로 시작하지 않고 홈 화면으로
+}
+
+function logoutUser() {
+    localStorage.removeItem(CURRENT_USER_KEY);
+    currentUser = null;
+    renderAuthState();
+    showAuthOverlay();
+}
+
+function showAuthOverlay() {
+    const el = document.getElementById('auth-overlay');
+    if (el) el.classList.remove('hidden');
+}
+function hideAuthOverlay() {
+    const el = document.getElementById('auth-overlay');
+    if (el) el.classList.add('hidden');
+}
+
+// 왼쪽 네비 하단에 로그인 상태(사용자 이름 + 로그아웃/로그인 버튼)를 표시한다.
+function renderAuthState() {
+    const box = document.getElementById('nav-user');
+    if (!box) return;
+    if (currentUser) {
+        box.innerHTML = `
+            <span class="nav-user-name"><i class="fa-solid fa-circle-user"></i> ${currentUser}</span>
+            <button type="button" id="logout-btn" class="nav-logout"><i class="fa-solid fa-right-from-bracket"></i> 로그아웃</button>
+        `;
+        const lo = document.getElementById('logout-btn');
+        if (lo) lo.addEventListener('click', logoutUser);
+    } else {
+        box.innerHTML = `
+            <span class="nav-user-name"><i class="fa-solid fa-user-secret"></i> 게스트</span>
+            <button type="button" id="login-open-btn" class="nav-logout"><i class="fa-solid fa-right-to-bracket"></i> 로그인</button>
+        `;
+        const li = document.getElementById('login-open-btn');
+        if (li) li.addEventListener('click', showAuthOverlay);
+    }
+}
+
+// 인증 UI 배선 (로그인/회원가입 탭 전환, 폼 제출, 게스트 버튼)
+function initAuthUI() {
+    document.querySelectorAll('.auth-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            const mode = tab.dataset.auth;
+            document.querySelectorAll('.auth-tab').forEach(t => t.classList.toggle('active', t === tab));
+            document.getElementById('login-form').classList.toggle('hidden', mode !== 'login');
+            document.getElementById('signup-form').classList.toggle('hidden', mode !== 'signup');
+            document.getElementById('login-error').textContent = '';
+            document.getElementById('signup-error').textContent = '';
+        });
+    });
+
+    const loginForm = document.getElementById('login-form');
+    if (loginForm) loginForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const errEl = document.getElementById('login-error');
+        errEl.textContent = '';
+        const name = document.getElementById('login-username').value;
+        const res = await loginUser(name, document.getElementById('login-password').value);
+        if (res.ok) enterAsUser(name.trim());
+        else errEl.textContent = res.error;
+    });
+
+    const signupForm = document.getElementById('signup-form');
+    if (signupForm) signupForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const errEl = document.getElementById('signup-error');
+        errEl.textContent = '';
+        const name = document.getElementById('signup-username').value;
+        const res = await signupUser(name, document.getElementById('signup-password').value, document.getElementById('signup-password2').value);
+        if (res.ok) enterAsUser(name.trim());
+        else errEl.textContent = res.error;
+    });
+
+    const guestBtn = document.getElementById('guest-btn');
+    if (guestBtn) guestBtn.addEventListener('click', () => enterAsUser(null));
+}
+
+window.addEventListener('load', () => {
+    initAuthUI();
+
+    // 저장된 로그인 세션이 있으면 자동 로그인, 없으면 인증 화면을 띄운다.
+    const saved = localStorage.getItem(CURRENT_USER_KEY);
+    currentUser = (saved && getUsers()[saved]) ? saved : null;
+
+    loadLogsFromStorage();
+    loadGameSummariesFromStorage();
+    renderDataLab();
+    renderStatsDashboard();
+    renderAuthState();
+    enterHomeMode(); // 진입 시 바로 시작하지 않고 홈 화면을 보여준다
+
+    if (currentUser) hideAuthOverlay();
+    else showAuthOverlay();
 });

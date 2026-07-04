@@ -23,12 +23,13 @@
                 <span class="brand-text">chess.com</span>
             </div>
             <div class="nav-links">
-                <a href="#" class="nav-item active" id="nav-play"><i class="fa-solid fa-play"></i> <span>Play</span></a>
+                <a href="#" class="nav-item active" id="nav-home"><i class="fa-solid fa-house"></i> <span>Home</span></a>
                 <a href="#" class="nav-item" id="nav-stats"><i class="fa-solid fa-chart-simple"></i> <span>통계</span></a>
                 <a href="#" class="nav-item" id="nav-themes"><i class="fa-solid fa-palette"></i> <span>Themes</span></a>
                 <a href="#" class="nav-item" id="nav-sound"><i class="fa-solid fa-volume-high"></i> <span>Sound</span></a>
             </div>
             <div class="nav-footer">
+                <div id="nav-user" class="nav-user"></div>
                 <a href="#" class="nav-item" id="nav-help"><i class="fa-solid fa-question-circle"></i> <span>Help</span></a>
             </div>
         </nav>
@@ -100,7 +101,6 @@
                 <!-- Tab Headers -->
                 <div class="sidebar-tabs">
                     <button class="tab-btn active" data-tab="game-tab"><i class="fa-solid fa-chess"></i> Play</button>
-                    <button class="tab-btn" data-tab="stats-tab"><i class="fa-solid fa-chart-simple"></i> Stats</button>
                     <button class="tab-btn" data-tab="settings-tab"><i class="fa-solid fa-cog"></i> Settings</button>
                 </div>
 
@@ -239,11 +239,12 @@
                                         <th>Mode</th>
                                         <th>Started</th>
                                         <th>Ended</th>
+                                        <th>리뷰</th>
                                     </tr>
                                 </thead>
                                 <tbody id="game-summary-body">
                                     <tr>
-                                        <td colspan="8">아직 완료된 경기 데이터가 없습니다.</td>
+                                        <td colspan="9">아직 완료된 경기 데이터가 없습니다.</td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -297,13 +298,13 @@
                             <h2 id="sf-title"><i class="fa-solid fa-microchip"></i> 정밀 분석 (Stockfish)</h2>
                             <span class="lab-badge">Engine</span>
                         </div>
-                        <p class="report-note">세계 최강 엔진 Stockfish로 이번 판의 각 수를 채점합니다. 상대 AI와는 별개인 분석 전용 엔진입니다.</p>
+                        <p class="report-note">세계 최강 엔진 Stockfish로 이번 판을 채점합니다. 정확성(%)과 수 등급을 백·흑 양쪽으로 보여줍니다. (Chess.com 게임 리뷰 방식)</p>
                         <div class="data-actions">
                             <button id="sf-analyze-btn" class="sidebar-btn secondary" type="button">
                                 <i class="fa-solid fa-magnifying-glass-chart"></i> 이번 판 분석
                             </button>
                         </div>
-                        <p id="sf-status" class="sf-status">아직 분석하지 않았습니다. VS Computer로 한 판 둔 뒤 눌러보세요.</p>
+                        <p id="sf-status" class="sf-status">아직 분석하지 않았습니다. 한 판 둔 뒤 눌러보세요.</p>
                         <div class="data-stat-grid" id="sf-result-grid"></div>
                         <div class="sf-worst" id="sf-worst"></div>
                     </section>
@@ -351,6 +352,75 @@
 
                     <div class="settings-bottom-actions">
                         <button id="new-game-btn" class="primary-green-btn"><i class="fa-solid fa-play"></i> Play New Game</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Home dashboard: shown on entry; cards launch play / review / stats -->
+            <section class="home-screen" id="home-screen">
+                <div class="home-inner">
+                    <div class="home-header">
+                        <i class="fa-solid fa-chess-king home-logo"></i>
+                        <div>
+                            <h1>Chess Data Lab</h1>
+                            <p class="home-tagline" id="home-greeting">체스를 두고, 데이터로 실력을 분석하세요.</p>
+                        </div>
+                    </div>
+
+                    <div class="home-grid">
+                        <!-- Play card -->
+                        <div class="home-card home-card-play">
+                            <h2><i class="fa-solid fa-chess"></i> 플레이</h2>
+                            <button class="home-action" data-play="ai"><i class="fa-solid fa-robot"></i> <span>봇과 플레이</span><i class="fa-solid fa-chevron-right go"></i></button>
+                            <button class="home-action" data-play="pvp"><i class="fa-solid fa-user-group"></i> <span>2인 플레이</span><i class="fa-solid fa-chevron-right go"></i></button>
+                            <button class="home-action" id="home-play-btn"><i class="fa-solid fa-play"></i> <span>바로 시작 (기본 설정)</span><i class="fa-solid fa-chevron-right go"></i></button>
+                        </div>
+
+                        <!-- Streak card -->
+                        <div class="home-card home-stat-card">
+                            <div class="home-stat-icon streak"><i class="fa-solid fa-fire"></i></div>
+                            <span class="home-stat-label">연속 플레이</span>
+                            <strong class="home-stat-value" id="home-streak">0일</strong>
+                            <span class="home-stat-sub">마지막 플레이 기준</span>
+                        </div>
+
+                        <!-- Record card -->
+                        <div class="home-card home-stat-card">
+                            <div class="home-stat-icon record"><i class="fa-solid fa-trophy"></i></div>
+                            <span class="home-stat-label">AI전 전적 (승-무-패)</span>
+                            <strong class="home-stat-value" id="home-record">0-0-0</strong>
+                            <span class="home-stat-sub" id="home-total">총 0경기</span>
+                        </div>
+
+                        <!-- Game review card -->
+                        <div class="home-card home-card-review">
+                            <h2><i class="fa-solid fa-magnifying-glass-chart"></i> 게임 리뷰</h2>
+                            <p>자신의 실수로부터 배우세요.</p>
+                            <button class="home-action review" id="home-review-btn"><span id="home-review-label">최근 경기 분석</span><i class="fa-solid fa-chevron-right go"></i></button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Replay screen: step through a finished game move by move -->
+            <section class="replay-screen" id="replay-screen">
+                <div class="replay-header">
+                    <button id="replay-back-btn" class="sidebar-btn secondary" type="button"><i class="fa-solid fa-arrow-left"></i> 통계로</button>
+                    <h2 id="replay-title">복기</h2>
+                </div>
+                <div class="replay-body">
+                    <div class="board-wrapper replay-board-wrapper">
+                        <div id="replay-board" class="chessboard"></div>
+                    </div>
+                    <div class="replay-side">
+                        <div class="replay-status" id="replay-status">시작 위치</div>
+                        <div class="replay-moves" id="replay-moves"></div>
+                        <div class="replay-controls">
+                            <button id="replay-first" type="button" title="처음"><i class="fa-solid fa-backward-fast"></i></button>
+                            <button id="replay-prev" type="button" title="이전 수"><i class="fa-solid fa-backward-step"></i></button>
+                            <button id="replay-next" type="button" title="다음 수"><i class="fa-solid fa-forward-step"></i></button>
+                            <button id="replay-last" type="button" title="마지막"><i class="fa-solid fa-forward-fast"></i></button>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -469,6 +539,35 @@
 
     <!-- Confetti Particle canvas for win scenario -->
     <canvas id="confetti-canvas" class="confetti-canvas"></canvas>
+
+    <!-- Login / Sign-up gate (client-side only, localStorage based) -->
+    <div id="auth-overlay" class="modal-overlay auth-overlay">
+        <div class="modal-content auth-modal">
+            <div class="auth-brand"><i class="fa-solid fa-chess-king"></i> <span>Chess Data Lab</span></div>
+            <div class="auth-tabs">
+                <button type="button" class="auth-tab active" data-auth="login">로그인</button>
+                <button type="button" class="auth-tab" data-auth="signup">회원가입</button>
+            </div>
+
+            <form id="login-form" class="auth-form">
+                <input type="text" id="login-username" placeholder="아이디" autocomplete="username" required>
+                <input type="password" id="login-password" placeholder="비밀번호" autocomplete="current-password" required>
+                <p class="auth-error" id="login-error"></p>
+                <button type="submit" class="primary-green-btn"><i class="fa-solid fa-right-to-bracket"></i> 로그인</button>
+            </form>
+
+            <form id="signup-form" class="auth-form hidden">
+                <input type="text" id="signup-username" placeholder="아이디 (2자 이상)" autocomplete="username" required>
+                <input type="password" id="signup-password" placeholder="비밀번호 (4자 이상)" autocomplete="new-password" required>
+                <input type="password" id="signup-password2" placeholder="비밀번호 확인" autocomplete="new-password" required>
+                <p class="auth-error" id="signup-error"></p>
+                <button type="submit" class="primary-green-btn"><i class="fa-solid fa-user-plus"></i> 회원가입</button>
+            </form>
+
+            <button type="button" id="guest-btn" class="auth-guest">게스트로 시작</button>
+            <p class="auth-note"><i class="fa-solid fa-triangle-exclamation"></i> 이 로그인은 서버 없이 브라우저(localStorage)에만 저장되는 학습용입니다. 실제 비밀번호를 사용하지 마세요.</p>
+        </div>
+    </div>
 
     <!-- Custom Logic Script -->
     <script src="app.js"></script>
