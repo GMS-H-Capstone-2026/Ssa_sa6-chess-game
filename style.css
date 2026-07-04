@@ -1674,3 +1674,147 @@ body {
         grid-template-columns: repeat(2, 1fr);
     }
 }
+
+/* ==========================================================================
+   Learning Report (Stats tab) — data-driven strengths / weaknesses / advice
+   ========================================================================== */
+.learning-report {
+    margin-top: 18px;
+}
+
+.learning-report .report-note {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 4px 0 14px;
+}
+
+.report-scoreline {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.report-metric {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px 12px;
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 10px;
+    text-align: center;
+}
+
+.report-metric strong {
+    font-family: var(--font-header);
+    font-size: 18px;
+    color: var(--text-primary);
+}
+
+.report-block {
+    margin-bottom: 14px;
+    padding: 12px 14px;
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-left: 3px solid var(--accent);
+    border-radius: 10px;
+}
+
+.report-block h4 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 8px;
+    font-size: 13px;
+    font-family: var(--font-header);
+    color: var(--text-primary);
+}
+
+.report-block ul {
+    margin: 0;
+    padding-left: 18px;
+}
+
+.report-block li {
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+
+.report-block li.report-empty {
+    list-style: none;
+    margin-left: -18px;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+/* Semantic accent colors per block */
+.report-strengths { border-left-color: #10b981; }
+.report-strengths h4 i { color: #10b981; }
+
+.report-weaknesses { border-left-color: #f4a261; }
+.report-weaknesses h4 i { color: #f4a261; }
+
+.report-learn { border-left-color: var(--accent); }
+.report-learn h4 i { color: var(--accent); }
+
+/* ==========================================================================
+   Stockfish precision analysis panel
+   ========================================================================== */
+.sf-panel {
+    margin-top: 18px;
+}
+
+.sf-status {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 8px 0 12px;
+    min-height: 16px;
+}
+
+#sf-result-grid:empty {
+    display: none;
+}
+
+.sf-worst {
+    margin-top: 12px;
+}
+
+.sf-worst h4 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 8px;
+    font-size: 13px;
+    font-family: var(--font-header);
+    color: var(--text-primary);
+}
+
+.sf-worst ul {
+    margin: 0;
+    padding-left: 18px;
+}
+
+.sf-worst li {
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+
+.sf-tag {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #fff;
+}
+
+.sf-tag.sf-best { background: #10b981; }
+.sf-tag.sf-inaccuracy { background: #eab308; }
+.sf-tag.sf-mistake { background: #f4a261; }
+.sf-tag.sf-blunder { background: #e63946; }

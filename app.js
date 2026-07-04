@@ -318,6 +318,8 @@ let pendingPromotionMove = null;
 // 학생 과제는 아래 TODO 함수들을 완성해서 이 로그를 수집, 저장, 변환, 출력하는 것입니다.
 const DATA_LOG_STORAGE_KEY = 'chessDataEngineeringMoveLogs';
 const GAME_SUMMARY_STORAGE_KEY = 'chessDataEngineeringGameSummaries';
+// moveLogs: 말이 "한 번" 움직일 때마다 한 줄씩 쌓이는 상세 이동 로그 (이동 단위)
+// gameSummaries: 한 "판"이 끝날 때마다 한 줄씩 쌓이는 경기 요약 데이터 (경기 단위)
 let moveLogs = [];
 let gameSummaries = [];
 let currentGameId = null;
@@ -350,6 +352,7 @@ const cumulativeTotalGames = document.getElementById('cumulative-total-games');
 const cumulativeTotalMoves = document.getElementById('cumulative-total-moves');
 const cumulativeAvgMoves = document.getElementById('cumulative-avg-moves');
 const cumulativeCaptures = document.getElementById('cumulative-captures');
+const cumulativeWhiteMoves = document.getElementById('cumulative-white-moves');
 const gameSummaryBody = document.getElementById('game-summary-body');
 const exportGamesCsvBtn = document.getElementById('export-games-csv-btn');
 const clearGamesBtn = document.getElementById('clear-games-btn');
@@ -366,9 +369,10 @@ function getPieceName(type) {
     return names[type] || 'unknown';
 }
 
-function buildMoveLog(move) {
-    // TODO 1: 로그 스키마에 필요한 컬럼을 더 추가해보세요.
-    // 예: isCheck, isCheckmate, beforeFen, afterFen, playerType(ai/player)
+function buildMoveLog(move, evalBefore, evalAfter, playerType) {
+    // evalBefore/evalAfter: 이 수를 두기 직전/직후의 형세 점수 (양수=백 우세, 음수=흑 우세).
+    // evalDelta: 이 수로 형세가 얼마나 변했는지. 분석 탭에서 실수/좋은 수를 판정하는 근거가 된다.
+    // playerType: 이 수를 사람이 뒀는지('player') AI가 뒀는지('ai').
     return {
         gameId: currentGameId,
         moveNumber: moveLogs.length + 1,
@@ -378,6 +382,10 @@ function buildMoveLog(move) {
         to: move.to,
         capturedPiece: move.captured ? getPieceName(move.captured) : '',
         san: move.san,
+        playerType,
+        evalBefore,
+        evalAfter,
+        evalDelta: evalAfter - evalBefore,
         timestamp: new Date().toISOString()
     };
 }
@@ -413,11 +421,14 @@ function getCurrentGameLogs() {
     return moveLogs.filter(log => log.gameId === currentGameId);
 }
 
-function finishCurrentGame(result, reason) {
+function finishCurrentGame(result, reason, outcome = 'abandoned') {
     if (!currentGameId || currentGameSaved) return;
 
     const currentLogs = getCurrentGameLogs();
     if (currentLogs.length === 0) return;
+
+    // 이 판을 사람(player) 관점에서 분석해서 실수/좋은 수 개수도 요약에 함께 저장한다.
+    const analysis = analyzeGameLogs(currentLogs);
 
     const summary = {
         gameId: currentGameId,
@@ -425,24 +436,40 @@ function finishCurrentGame(result, reason) {
         endedAt: new Date().toISOString(),
         result,
         reason,
+        outcome,
         totalMoves: currentLogs.length,
         whiteMoves: currentLogs.filter(log => log.color === 'white').length,
         blackMoves: currentLogs.filter(log => log.color === 'black').length,
         captures: currentLogs.filter(log => log.capturedPiece).length,
+        playerBlunders: analysis.blunders,
+        playerMistakes: analysis.mistakes,
+        playerGoodMoves: analysis.goodMoves,
         durationSeconds: timeElapsed,
         gameMode,
         playerColor
     };
 
+    // 방금 끝난 판의 요약(summary)을 누적 경기 기록 배열의 맨 뒤에 추가한다.
+    // 표에 새 행 하나를 추가하는 것과 같아서, 판을 거듭할수록 데이터가 쌓인다.
     gameSummaries.push(summary);
     saveGameSummariesToStorage();
     currentGameSaved = true;
     renderStatsDashboard();
 }
 
-function recordMoveLog(move) {
-    // TODO 4: from, to, piece 값이 비어 있으면 저장하지 않는 데이터 품질 검사를 추가해보세요.
-    const log = buildMoveLog(move);
+function recordMoveLog(move, evalBefore) {
+    // 데이터 품질 검사: from, to, piece 중 하나라도 없으면 이상한 데이터이므로 저장하지 않는다.
+    if (!move.from || !move.to || !move.piece) {
+        console.warn("잘못된 이동 데이터라서 저장하지 않습니다.", move);
+        return;
+    }
+
+    // 이 수를 둔 "직후"의 형세 점수. game.move()가 이미 적용된 상태이므로 현재 판이 곧 이동 후 상태다.
+    const evalAfter = evaluateBoard(game.board());
+    // AI 모드에서 내 색이 아닌 수는 AI가 둔 것, 나머지는 사람이 둔 것으로 표시한다.
+    const playerType = (gameMode === 'ai' && move.color !== playerColor) ? 'ai' : 'player';
+
+    const log = buildMoveLog(move, evalBefore ?? evalAfter, evalAfter, playerType);
     moveLogs.push(log);
     saveLogsToStorage();
     renderDataLab();
@@ -484,16 +511,134 @@ function renderDataLab() {
     `).join('');
 }
 
+// ===== 학습 분석 엔진 =====
+// 형세 점수 단위 감각: 폰 ≈ 10, 나이트/비숍 ≈ 30, 룩 ≈ 50, 퀸 ≈ 90.
+const BLUNDER_THRESHOLD = 25;   // 한 사이클에 -2.5점 이상 잃으면 블런더(중대한 실수)
+const MISTAKE_THRESHOLD = 10;   // -1.0점 이상 잃으면 실수
+const GOOD_MOVE_THRESHOLD = 15; // +1.5점 이상 벌면 좋은 수
+
+// 한 판의 이동 로그를 받아 "사람(player)" 관점에서 분석한다.
+function analyzeGameLogs(logs) {
+    const sorted = [...logs].sort((a, b) => a.moveNumber - b.moveNumber);
+    const playerMoves = sorted.filter(log => log.playerType === 'player');
+
+    const result = {
+        playerMoveCount: playerMoves.length,
+        blunders: 0,
+        mistakes: 0,
+        goodMoves: 0,
+        capturesByPlayer: 0,
+        capturesAgainstPlayer: 0,
+        pieceUsage: { pawn: 0, knight: 0, bishop: 0, rook: 0, queen: 0, king: 0 }
+    };
+    if (playerMoves.length === 0) return result;
+
+    // 사람이 둔 첫 수의 색으로 사람의 색을 추정한다. (평가 점수는 백 관점이라 부호 보정이 필요)
+    const sign = playerMoves[0].color === 'white' ? 1 : -1;
+
+    for (let i = 0; i < sorted.length; i++) {
+        const log = sorted[i];
+        if (log.playerType !== 'player') continue;
+
+        if (result.pieceUsage[log.piece] !== undefined) result.pieceUsage[log.piece]++;
+        if (log.capturedPiece) result.capturesByPlayer++;
+
+        // 한 "사이클" = 내 수 + 바로 다음 상대 응수. 그 사이 형세가 얼마나 변했는지로 실수를 판정한다.
+        // 말을 공짜로 내주면 내 수 직후엔 티가 안 나고, 상대가 잡는 다음 수에서 점수가 떨어지므로 두 수를 함께 본다.
+        const reply = sorted[i + 1];
+        if (reply && reply.playerType === 'ai' && reply.capturedPiece) {
+            result.capturesAgainstPlayer++;
+        }
+        const evalAfterCycle = reply ? reply.evalAfter : log.evalAfter;
+        const cycleDelta = (evalAfterCycle - log.evalBefore) * sign; // 사람 관점: 양수=유리해짐
+
+        if (cycleDelta <= -BLUNDER_THRESHOLD) result.blunders++;
+        else if (cycleDelta <= -MISTAKE_THRESHOLD) result.mistakes++;
+        else if (cycleDelta >= GOOD_MOVE_THRESHOLD) result.goodMoves++;
+    }
+    return result;
+}
+
+// AI전 전체를 모아 사람 관점 누적 분석을 낸다. (승패는 요약에서, 실수는 실제 이동 로그에서)
+function getPlayerAnalysis() {
+    const aiGames = gameSummaries.filter(s => s.gameMode === 'ai');
+    const agg = {
+        analyzedGames: aiGames.length,
+        wins: 0, losses: 0, draws: 0,
+        blunders: 0, mistakes: 0, goodMoves: 0,
+        playerMoveCount: 0,
+        capturesByPlayer: 0, capturesAgainstPlayer: 0,
+        pieceUsage: { pawn: 0, knight: 0, bishop: 0, rook: 0, queen: 0, king: 0 }
+    };
+
+    aiGames.forEach(s => {
+        if (s.outcome === 'win') agg.wins++;
+        else if (s.outcome === 'loss') agg.losses++;
+        else if (s.outcome === 'draw') agg.draws++;
+
+        const logs = moveLogs.filter(l => l.gameId === s.gameId);
+        const a = analyzeGameLogs(logs);
+        agg.blunders += a.blunders;
+        agg.mistakes += a.mistakes;
+        agg.goodMoves += a.goodMoves;
+        agg.playerMoveCount += a.playerMoveCount;
+        agg.capturesByPlayer += a.capturesByPlayer;
+        agg.capturesAgainstPlayer += a.capturesAgainstPlayer;
+        for (const k in agg.pieceUsage) agg.pieceUsage[k] += a.pieceUsage[k];
+    });
+    return agg;
+}
+
+// 누적 분석 지표를 사람이 읽을 수 있는 "강점 / 약점 / 학습 추천" 문장으로 바꾼다 (규칙 기반).
+function buildLearningReport(agg) {
+    const strengths = [];
+    const weaknesses = [];
+    const recommendations = [];
+
+    if (agg.analyzedGames === 0 || agg.playerMoveCount === 0) {
+        return { strengths, weaknesses, recommendations };
+    }
+
+    const perGame = n => n / agg.analyzedGames;
+    const blunderRate = perGame(agg.blunders);
+    const minorMoves = agg.pieceUsage.knight + agg.pieceUsage.bishop;
+    const minorShare = minorMoves / agg.playerMoveCount;
+
+    // --- 강점 ---
+    if (agg.wins > agg.losses) strengths.push('AI 상대 승률이 좋습니다. 이기는 판을 꾸준히 만들고 있어요.');
+    if (blunderRate < 0.5) strengths.push('치명적인 실수(블런더)가 드뭅니다. 안정적으로 둡니다.');
+    if (agg.capturesByPlayer > agg.capturesAgainstPlayer) strengths.push('잡히는 말보다 잡는 말이 많습니다. 물질(기물 수) 관리를 잘합니다.');
+    if (agg.goodMoves >= agg.analyzedGames) strengths.push('형세를 끌어올리는 좋은 수를 판마다 만들어냅니다.');
+    if (minorShare >= 0.25) strengths.push('나이트·비숍을 활발히 씁니다. 기물 전개 감각이 좋습니다.');
+
+    // --- 약점 ---
+    if (blunderRate >= 1) weaknesses.push(`판당 평균 ${blunderRate.toFixed(1)}회 큰 실수로 형세를 크게 잃습니다.`);
+    if (agg.capturesAgainstPlayer > agg.capturesByPlayer) weaknesses.push('잡는 말보다 잡히는 말이 많습니다. 기물을 자주 헌납합니다.');
+    if (minorShare < 0.15) weaknesses.push('나이트·비숍을 거의 쓰지 않습니다. 기물 전개가 부족합니다.');
+    if (agg.losses > agg.wins) weaknesses.push('AI에게 지는 경우가 더 많습니다. 마무리로 갈수록 무너집니다.');
+
+    // --- 더 배워야 할 점 (약점과 연결된 학습 방향) ---
+    if (blunderRate >= 0.7) recommendations.push('한 수 두기 전 "이 말이 공짜로 잡히지 않나?" 확인하는 블런더 체크 습관.');
+    if (agg.capturesAgainstPlayer > agg.capturesByPlayer) recommendations.push('포크·핀 같은 기본 전술과 "매달린 기물(hanging piece)" 개념 공부.');
+    if (minorShare < 0.15) recommendations.push('오프닝에서 나이트·비숍부터 먼저 전개하는 기물 발전 원칙.');
+    if (agg.losses > agg.wins) recommendations.push('기본 오프닝 원칙과 킹 안전(캐슬링) 익히기.');
+    if (recommendations.length === 0) recommendations.push('지금 방식을 유지하며 더 강한 난이도(Hard)에 도전해 보세요.');
+
+    return { strengths, weaknesses, recommendations };
+}
+
 function getCumulativeStats() {
     const totalGames = gameSummaries.length;
     const totalMoves = gameSummaries.reduce((sum, gameSummary) => sum + gameSummary.totalMoves, 0);
     const totalCaptures = gameSummaries.reduce((sum, gameSummary) => sum + gameSummary.captures, 0);
+    const totalWhiteMoves = gameSummaries.reduce((sum, gameSummary) => sum + gameSummary.whiteMoves, 0);
 
     return {
         totalGames,
         totalMoves,
         avgMoves: totalGames === 0 ? 0 : Math.round(totalMoves / totalGames),
-        totalCaptures
+        totalCaptures,
+        totalWhiteMoves
     };
 }
 
@@ -505,27 +650,261 @@ function renderStatsDashboard() {
     cumulativeTotalMoves.textContent = stats.totalMoves;
     cumulativeAvgMoves.textContent = stats.avgMoves;
     cumulativeCaptures.textContent = stats.totalCaptures;
+    cumulativeWhiteMoves.textContent = stats.totalWhiteMoves;
+
+    // 학습 리포트(강점/약점/추천)는 경기가 없어도 안내 문구를 그려야 하므로 이른 return 전에 호출한다.
+    renderLearningReport();
 
     if (gameSummaries.length === 0) {
-        gameSummaryBody.innerHTML = '<tr><td colspan="4">아직 완료된 경기 데이터가 없습니다.</td></tr>';
+        gameSummaryBody.innerHTML = '<tr><td colspan="8">아직 완료된 경기 데이터가 없습니다.</td></tr>';
         return;
     }
 
-    // TODO 8: 최근 경기 목록에 startedAt, endedAt, gameMode 같은 컬럼을 더 표시해보세요.
-    gameSummaryBody.innerHTML = gameSummaries.slice(-8).reverse().map(gameSummary => `
+    gameSummaryBody.innerHTML = gameSummaries.slice(-8).reverse().map(gameSummary => {
+        // ISO 문자열(예: 2026-07-03T10:30:00.000Z)에서 시:분:초 부분만 잘라서 보여준다.
+        const startedTime = gameSummary.startedAt.slice(11, 19);
+        const endedTime = gameSummary.endedAt.slice(11, 19);
+        return `
         <tr>
             <td>${gameSummary.gameId.replace('game-', '')}</td>
             <td>${gameSummary.result}</td>
             <td>${gameSummary.totalMoves}</td>
             <td>${gameSummary.durationSeconds}s</td>
+            <td>${gameSummary.captures}</td>
+            <td>${gameSummary.gameMode}</td>
+            <td>${startedTime}</td>
+            <td>${endedTime}</td>
         </tr>
-    `).join('');
+    `;
+    }).join('');
+}
+
+function fillReportList(id, items) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.innerHTML = items.length
+        ? items.map(text => `<li>${text}</li>`).join('')
+        : '<li class="report-empty">데이터가 더 쌓이면 표시됩니다.</li>';
+}
+
+function renderLearningReport() {
+    // 리포트 영역이 없는 경우(예: 아직 HTML 미추가)에는 조용히 넘어간다.
+    if (!document.getElementById('report-strengths')) return;
+
+    const agg = getPlayerAnalysis();
+    const report = buildLearningReport(agg);
+
+    const recordEl = document.getElementById('report-record');
+    const blunderEl = document.getElementById('report-blunders');
+    const goodEl = document.getElementById('report-goodmoves');
+    if (recordEl) recordEl.textContent = agg.analyzedGames === 0 ? '-' : `${agg.wins}승 ${agg.losses}패 ${agg.draws}무`;
+    if (blunderEl) blunderEl.textContent = agg.analyzedGames === 0 ? '-' : `${agg.blunders}회`;
+    if (goodEl) goodEl.textContent = agg.analyzedGames === 0 ? '-' : `${agg.goodMoves}회`;
+
+    fillReportList('report-strengths', report.strengths);
+    fillReportList('report-weaknesses', report.weaknesses);
+    fillReportList('report-learn', report.recommendations);
+}
+
+// ==========================================================================
+//  Stockfish 정밀 분석 (분석 전용 엔진 — 상대 AI와는 완전히 별개)
+//  로컬 stockfish.js(단일 스레드)를 Web Worker로 띄워 각 국면을 평가한다.
+//  UCI 프로토콜: 'position fen ...' → 'go depth N' → info 줄의 score를 읽고 'bestmove'로 종료.
+// ==========================================================================
+const StockfishAnalyzer = {
+    worker: null,
+    depth: 12,
+    _pending: null,
+    _readyResolve: null,
+    _readyPromise: null,
+
+    init() {
+        if (this.worker) return this._readyPromise || Promise.resolve();
+        this._readyPromise = new Promise((resolve, reject) => {
+            this._readyResolve = resolve;
+            try {
+                this.worker = new Worker('stockfish.js');
+            } catch (e) {
+                reject(e);
+                return;
+            }
+            this.worker.onmessage = (e) => this._onLine(typeof e.data === 'string' ? e.data : String(e.data));
+            this.worker.onerror = (err) => { console.error('Stockfish worker error:', err && (err.message || err)); reject(err); };
+            this.worker.postMessage('uci');
+        });
+        return this._readyPromise;
+    },
+
+    _onLine(line) {
+        if (line === 'uciok') { this.worker.postMessage('isready'); return; }
+        if (line === 'readyok') { if (this._readyResolve) { this._readyResolve(); this._readyResolve = null; } return; }
+        if (!this._pending) return;
+
+        // score는 "둘 차례인 쪽" 관점의 centipawn 또는 mate 수. 가장 최근(가장 깊은) 값을 유지한다.
+        const mMate = line.match(/score mate (-?\d+)/);
+        const mCp = line.match(/score cp (-?\d+)/);
+        if (mMate) {
+            const n = parseInt(mMate[1], 10);
+            this._pending.scoreCp = n > 0 ? 100000 - n : -100000 - n; // 메이트는 아주 큰 값으로 치환
+            this._pending.isMate = true;
+        } else if (mCp) {
+            this._pending.scoreCp = parseInt(mCp[1], 10);
+            this._pending.isMate = false;
+        }
+        if (line.startsWith('bestmove')) {
+            const p = this._pending;
+            this._pending = null;
+            p.resolve({ scoreCp: p.scoreCp, isMate: p.isMate });
+        }
+    },
+
+    // 한 국면(FEN)을 평가해 "둘 차례인 쪽" 관점 centipawn 점수를 돌려준다.
+    evaluateFen(fen) {
+        return new Promise((resolve) => {
+            this._pending = { resolve, scoreCp: 0, isMate: false };
+            this.worker.postMessage('position fen ' + fen);
+            this.worker.postMessage('go depth ' + this.depth);
+        });
+    },
+
+    terminate() { if (this.worker) { this.worker.terminate(); this.worker = null; this._readyPromise = null; } }
+};
+
+// 로그(SAN)를 순서대로 재생해서 [시작국면, 1수후, 2수후, ...] FEN 목록을 만든다.
+// 로그에 FEN을 따로 저장하지 않아도 chess.js로 국면을 복원할 수 있다.
+function reconstructFens(orderedLogs) {
+    const replay = new Chess();
+    const fens = [replay.fen()];
+    for (const log of orderedLogs) {
+        const mv = replay.move(log.san);
+        if (!mv) break; // 재생 실패(데이터 손상) 시 안전하게 중단
+        fens.push(replay.fen());
+    }
+    return fens;
+}
+
+// 센티폰 손실을 사람이 읽는 등급으로 분류한다 (Lichess/Chess.com과 유사한 기준).
+function classifyLoss(lossCp) {
+    if (lossCp < 20) return 'best';
+    if (lossCp < 90) return 'inaccuracy';
+    if (lossCp < 200) return 'mistake';
+    return 'blunder';
+}
+
+const LOSS_LABEL_KO = { best: '좋은 수', inaccuracy: '부정확', mistake: '실수', blunder: '블런더' };
+
+// 각 FEN 평가(cpList, 둘 차례 관점)를 사람 관점 손실로 바꿔 정밀 리포트를 만든다.
+function computeStockfishReport(cpList, orderedLogs) {
+    // cpList[k] = fens[k] 평가. fens[0]은 백 차례라, k가 짝수면 백 차례 → White 관점으로 통일한다.
+    const cpWhite = cpList.map((cp, k) => (k % 2 === 0 ? cp : -cp));
+
+    const report = { analyzed: false, playerMoves: 0, best: 0, inaccuracy: 0, mistake: 0, blunder: 0, avgLoss: 0, worst: [] };
+    const playerLogs = orderedLogs.filter(l => l.playerType === 'player');
+    if (playerLogs.length === 0) return report;
+
+    const sign = playerLogs[0].color === 'white' ? 1 : -1; // 사람이 흑이면 부호를 뒤집는다
+    let lossSum = 0;
+    const moveLosses = [];
+
+    for (let i = 0; i < orderedLogs.length; i++) {
+        const log = orderedLogs[i];
+        if (log.playerType !== 'player') continue;
+        if (i + 1 >= cpWhite.length) break; // 평가가 부족하면 방어적으로 중단
+
+        const beforeW = cpWhite[i];
+        const afterW = cpWhite[i + 1];
+        let loss = (beforeW - afterW) * sign;      // 사람 관점: 양수 = 형세가 나빠짐
+        loss = Math.max(0, Math.min(loss, 1000));  // 이득(음수)은 0, 상한 1000으로 클램프
+
+        lossSum += loss;
+        report.playerMoves++;
+        report[classifyLoss(loss)]++;
+        moveLosses.push({ san: log.san, moveNumber: log.moveNumber, loss: Math.round(loss) });
+    }
+
+    report.analyzed = true;
+    report.avgLoss = report.playerMoves ? Math.round(lossSum / report.playerMoves) : 0;
+    report.worst = moveLosses.sort((a, b) => b.loss - a.loss).slice(0, 3);
+    return report;
+}
+
+let stockfishBusy = false;
+async function analyzeCurrentGameWithStockfish() {
+    if (stockfishBusy) return;
+    const statusEl = document.getElementById('sf-status');
+    const btn = document.getElementById('sf-analyze-btn');
+
+    const orderedLogs = getCurrentGameLogs().slice().sort((a, b) => a.moveNumber - b.moveNumber);
+    if (!orderedLogs.some(l => l.playerType === 'player')) {
+        if (statusEl) statusEl.textContent = '분석할 내 수가 없습니다. VS Computer로 몇 수 두어 보세요.';
+        return;
+    }
+
+    stockfishBusy = true;
+    if (btn) btn.disabled = true;
+    try {
+        if (statusEl) statusEl.textContent = '엔진 로딩 중...';
+        await StockfishAnalyzer.init();
+
+        const fens = reconstructFens(orderedLogs);
+        const cpList = [];
+        for (let k = 0; k < fens.length; k++) {
+            if (statusEl) statusEl.textContent = `분석 중... ${k + 1}/${fens.length} 국면`;
+            const res = await StockfishAnalyzer.evaluateFen(fens[k]);
+            cpList.push(res.scoreCp);
+        }
+
+        const report = computeStockfishReport(cpList, orderedLogs);
+        renderStockfishReport(report);
+        if (statusEl) statusEl.textContent = `분석 완료 (depth ${StockfishAnalyzer.depth}, ${report.playerMoves}수 채점).`;
+    } catch (err) {
+        console.error('Stockfish 분석 실패:', err);
+        if (statusEl) statusEl.textContent = '분석 실패: 엔진(stockfish.js)을 불러오지 못했습니다.';
+    } finally {
+        stockfishBusy = false;
+        if (btn) btn.disabled = false;
+    }
+}
+
+function renderStockfishReport(report) {
+    const grid = document.getElementById('sf-result-grid');
+    const worstEl = document.getElementById('sf-worst');
+    if (!grid) return;
+
+    if (!report.analyzed) {
+        grid.innerHTML = '';
+        if (worstEl) worstEl.innerHTML = '';
+        return;
+    }
+
+    grid.innerHTML = `
+        <div class="data-stat-card"><span class="stat-label">채점한 내 수</span><strong>${report.playerMoves}</strong></div>
+        <div class="data-stat-card"><span class="stat-label">평균 손실(cp)</span><strong>${report.avgLoss}</strong></div>
+        <div class="data-stat-card"><span class="stat-label">블런더</span><strong>${report.blunder}</strong></div>
+        <div class="data-stat-card"><span class="stat-label">실수</span><strong>${report.mistake}</strong></div>
+        <div class="data-stat-card"><span class="stat-label">부정확</span><strong>${report.inaccuracy}</strong></div>
+        <div class="data-stat-card"><span class="stat-label">좋은 수</span><strong>${report.best}</strong></div>
+    `;
+
+    if (worstEl) {
+        worstEl.innerHTML = report.worst.length
+            ? '<h4><i class="fa-solid fa-arrow-trend-down"></i> 가장 아쉬웠던 수</h4><ul>' +
+              report.worst.map(w => `<li><strong>${w.san}</strong> — ${w.loss}cp 손실 <span class="sf-tag sf-${classifyLoss(w.loss)}">${LOSS_LABEL_KO[classifyLoss(w.loss)]}</span></li>`).join('') +
+              '</ul>'
+            : '';
+    }
+}
+
+function escapeCSVValue(value) {
+    // 값 안에 큰따옴표가 있으면 ""로 바꾸고 전체를 큰따옴표로 감싼다.
+    // 이렇게 하면 값 안에 쉼표나 줄바꿈이 있어도 CSV가 깨지지 않는다.
+    const stringValue = String(value ?? '');
+    return `"${stringValue.replace(/"/g, '""')}"`;
 }
 
 function convertLogsToCSV(logs) {
-    // TODO 7: 쉼표나 줄바꿈이 들어간 데이터도 안전하게 CSV로 바꾸는 함수를 개선해보세요.
     const headers = ['moveNumber', 'color', 'piece', 'from', 'to', 'capturedPiece', 'san', 'timestamp'];
-    const rows = logs.map(log => headers.map(header => `"${log[header] ?? ''}"`).join(','));
+    const rows = logs.map(log => headers.map(header => escapeCSVValue(log[header])).join(','));
     return [headers.join(','), ...rows].join('\n');
 }
 
@@ -540,7 +919,8 @@ function downloadCSV() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'chess_move_logs.csv';
+    const today = new Date().toISOString().slice(0, 10);
+    link.download = `chess_move_logs_${today}.csv`;
     link.click();
     URL.revokeObjectURL(url);
 }
@@ -564,14 +944,15 @@ function downloadGameSummariesCSV() {
         return;
     }
 
-    const headers = ['gameId', 'startedAt', 'endedAt', 'result', 'totalMoves', 'whiteMoves', 'blackMoves', 'captures', 'durationSeconds', 'gameMode', 'playerColor'];
-    const rows = gameSummaries.map(summary => headers.map(header => `"${summary[header] ?? ''}"`).join(','));
+    const headers = ['gameId', 'startedAt', 'endedAt', 'result', 'outcome', 'totalMoves', 'whiteMoves', 'blackMoves', 'captures', 'playerBlunders', 'playerMistakes', 'playerGoodMoves', 'durationSeconds', 'gameMode', 'playerColor'];
+    const rows = gameSummaries.map(summary => headers.map(header => escapeCSVValue(summary[header])).join(','));
     const csv = [headers.join(','), ...rows].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'chess_game_summaries.csv';
+    const today = new Date().toISOString().slice(0, 10);
+    link.download = `chess_game_summaries_${today}.csv`;
     link.click();
     URL.revokeObjectURL(url);
 }
@@ -863,8 +1244,10 @@ function makeMove(from, to, promotion = null) {
         moveDetails.promotion = promotion;
     }
 
+    // 수를 두기 "직전"의 형세 점수를 먼저 재둔다 (이동 후 점수와 비교하기 위해).
+    const evalBefore = evaluateBoard(game.board());
     const move = game.move(moveDetails);
-    
+
     if (move) {
         // Sound trigger
         if (move.captured) {
@@ -873,7 +1256,7 @@ function makeMove(from, to, promotion = null) {
             SoundController.playMove();
         }
 
-        recordMoveLog(move);
+        recordMoveLog(move, evalBefore);
         
         // Capture game state history for undo/redo
         saveHistoryState();
@@ -961,17 +1344,18 @@ function triggerAIMove() {
 
         setTimeout(() => {
             if (bestMove) {
+                const evalBefore = evaluateBoard(game.board());
                 const move = game.move({
                     from: bestMove.from,
                     to: bestMove.to,
                     promotion: bestMove.promotion || 'q'
                 });
-                
+
                 if (move) {
                     if (move.captured) SoundController.playCapture();
                     else SoundController.playMove();
 
-                    recordMoveLog(move);
+                    recordMoveLog(move, evalBefore);
                     saveHistoryState();
                     initBoard();
                     updateUI();
@@ -1414,7 +1798,8 @@ function checkGameOver() {
         let title = '게임 종료';
         let reason = '';
         let isWin = false;
-        
+        let outcome = 'draw'; // 체크메이트가 아니면 모두 무승부 계열이므로 기본값은 draw
+
         if (game.in_checkmate()) {
             title = '체크메이트! (Checkmate)';
             const loser = game.turn();
@@ -1422,13 +1807,16 @@ function checkGameOver() {
                 if (loser === playerColor) {
                     reason = '인공지능(AI)의 승리입니다. 더 연습하여 다시 도전해보세요!';
                     isWin = false;
+                    outcome = 'loss';
                 } else {
                     reason = '축하합니다! 인공지능을 격파하고 승리하셨습니다!';
                     isWin = true;
+                    outcome = 'win';
                 }
             } else {
                 reason = loser === 'w' ? '흑(Black)의 승리입니다!' : '백(White)의 승리입니다!';
                 isWin = true; // Two players, always play celebration
+                outcome = 'decisive';
             }
         } else if (game.in_stalemate()) {
             title = '스테일메이트 (Stalemate)';
@@ -1444,7 +1832,7 @@ function checkGameOver() {
             reason = '폰의 전진이나 기물의 잡힘 없이 50수가 지나 무승부 처리되었습니다.';
         }
         
-        finishCurrentGame(title, reason);
+        finishCurrentGame(title, reason, outcome);
         showGameOverOverlay(title, reason, isWin);
         return true;
     }
@@ -1546,7 +1934,7 @@ document.querySelectorAll('input[name="game-mode"]').forEach(radio => {
     });
 });
 
-// Tab switcher
+// Tab switcher (right console: Play / Stats / Settings)
 document.querySelectorAll('.tab-btn').forEach(button => {
     button.addEventListener('click', () => {
         document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
@@ -1554,6 +1942,32 @@ document.querySelectorAll('.tab-btn').forEach(button => {
         button.classList.add('active');
         document.getElementById(button.dataset.tab).classList.remove('hidden');
     });
+});
+
+// 왼쪽 네비게이션 → 오른쪽 콘솔 탭 연결 (Play / 통계)
+function activateConsoleTab(tabId) {
+    const tabBtn = document.querySelector(`.tab-btn[data-tab="${tabId}"]`);
+    if (tabBtn) tabBtn.click(); // 기존 탭 전환 로직을 그대로 재사용
+}
+function setActiveNav(navId) {
+    document.querySelectorAll('.side-nav .nav-item').forEach(n => n.classList.remove('active'));
+    const el = document.getElementById(navId);
+    if (el) el.classList.add('active');
+}
+
+const navPlay = document.getElementById('nav-play');
+if (navPlay) navPlay.addEventListener('click', (event) => {
+    event.preventDefault();
+    activateConsoleTab('game-tab');
+    setActiveNav('nav-play');
+});
+
+const navStats = document.getElementById('nav-stats');
+if (navStats) navStats.addEventListener('click', (event) => {
+    event.preventDefault();
+    activateConsoleTab('stats-tab');
+    setActiveNav('nav-stats');
+    renderStatsDashboard(); // 열 때 최신 데이터로 갱신
 });
 
 // UI Modal toggles
@@ -1566,10 +1980,7 @@ document.getElementById('nav-themes').addEventListener('click', (event) => {
 });
 document.getElementById('close-theme-btn').addEventListener('click', () => themeModal.classList.add('hidden'));
 
-document.getElementById('nav-rules').addEventListener('click', (event) => {
-    event.preventDefault();
-    rulesModal.classList.remove('hidden');
-});
+// (Learn 버튼은 제거됨 — 규칙 모달은 아래 Help 버튼으로 계속 열 수 있다.)
 document.getElementById('nav-help').addEventListener('click', (event) => {
     event.preventDefault();
     rulesModal.classList.remove('hidden');
@@ -1589,6 +2000,9 @@ exportCsvBtn.addEventListener('click', downloadCSV);
 clearDataBtn.addEventListener('click', clearMoveLogs);
 exportGamesCsvBtn.addEventListener('click', downloadGameSummariesCSV);
 clearGamesBtn.addEventListener('click', clearGameSummaries);
+
+const sfAnalyzeBtn = document.getElementById('sf-analyze-btn');
+if (sfAnalyzeBtn) sfAnalyzeBtn.addEventListener('click', analyzeCurrentGameWithStockfish);
 
 // Theme Picker Logic
 document.querySelectorAll('.theme-option').forEach(opt => {

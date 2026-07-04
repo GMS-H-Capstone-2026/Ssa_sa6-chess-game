@@ -23,8 +23,8 @@
                 <span class="brand-text">chess.com</span>
             </div>
             <div class="nav-links">
-                <a href="#" class="nav-item active"><i class="fa-solid fa-play"></i> <span>Play</span></a>
-                <a href="#" class="nav-item" id="nav-rules"><i class="fa-solid fa-graduation-cap"></i> <span>Learn</span></a>
+                <a href="#" class="nav-item active" id="nav-play"><i class="fa-solid fa-play"></i> <span>Play</span></a>
+                <a href="#" class="nav-item" id="nav-stats"><i class="fa-solid fa-chart-simple"></i> <span>통계</span></a>
                 <a href="#" class="nav-item" id="nav-themes"><i class="fa-solid fa-palette"></i> <span>Themes</span></a>
                 <a href="#" class="nav-item" id="nav-sound"><i class="fa-solid fa-volume-high"></i> <span>Sound</span></a>
             </div>
@@ -214,6 +214,10 @@
                                 <span class="stat-label">Captures</span>
                                 <strong id="cumulative-captures">0</strong>
                             </div>
+                            <div class="data-stat-card">
+                                <span class="stat-label">White Moves</span>
+                                <strong id="cumulative-white-moves">0</strong>
+                            </div>
                         </div>
                         <div class="data-actions">
                             <button id="export-games-csv-btn" class="sidebar-btn secondary" type="button">
@@ -231,15 +235,77 @@
                                         <th>Result</th>
                                         <th>Moves</th>
                                         <th>Time</th>
+                                        <th>Captures</th>
+                                        <th>Mode</th>
+                                        <th>Started</th>
+                                        <th>Ended</th>
                                     </tr>
                                 </thead>
                                 <tbody id="game-summary-body">
                                     <tr>
-                                        <td colspan="4">아직 완료된 경기 데이터가 없습니다.</td>
+                                        <td colspan="8">아직 완료된 경기 데이터가 없습니다.</td>
                                     </tr>
                                 </tbody>
                             </table>
                         </div>
+                    </section>
+
+                    <!-- Learning Report: data-driven strengths / weaknesses / study advice -->
+                    <section class="data-lab-panel learning-report" aria-labelledby="report-title">
+                        <div class="data-lab-header">
+                            <h2 id="report-title"><i class="fa-solid fa-brain"></i> 학습 리포트</h2>
+                            <span class="lab-badge">Analysis</span>
+                        </div>
+                        <p class="report-note">AI전(VS Computer) 데이터를 형세 점수로 분석한 결과입니다.</p>
+                        <div class="report-scoreline">
+                            <div class="report-metric">
+                                <span class="stat-label">전적 (승-패-무)</span>
+                                <strong id="report-record">-</strong>
+                            </div>
+                            <div class="report-metric">
+                                <span class="stat-label">블런더</span>
+                                <strong id="report-blunders">-</strong>
+                            </div>
+                            <div class="report-metric">
+                                <span class="stat-label">좋은 수</span>
+                                <strong id="report-goodmoves">-</strong>
+                            </div>
+                        </div>
+                        <div class="report-block report-strengths">
+                            <h4><i class="fa-solid fa-thumbs-up"></i> 잘하는 점</h4>
+                            <ul id="report-strengths">
+                                <li class="report-empty">데이터가 더 쌓이면 표시됩니다.</li>
+                            </ul>
+                        </div>
+                        <div class="report-block report-weaknesses">
+                            <h4><i class="fa-solid fa-triangle-exclamation"></i> 부족한 점</h4>
+                            <ul id="report-weaknesses">
+                                <li class="report-empty">데이터가 더 쌓이면 표시됩니다.</li>
+                            </ul>
+                        </div>
+                        <div class="report-block report-learn">
+                            <h4><i class="fa-solid fa-graduation-cap"></i> 더 배워야 할 점</h4>
+                            <ul id="report-learn">
+                                <li class="report-empty">데이터가 더 쌓이면 표시됩니다.</li>
+                            </ul>
+                        </div>
+                    </section>
+
+                    <!-- Stockfish engine analysis: per-move accuracy scoring -->
+                    <section class="data-lab-panel sf-panel" aria-labelledby="sf-title">
+                        <div class="data-lab-header">
+                            <h2 id="sf-title"><i class="fa-solid fa-microchip"></i> 정밀 분석 (Stockfish)</h2>
+                            <span class="lab-badge">Engine</span>
+                        </div>
+                        <p class="report-note">세계 최강 엔진 Stockfish로 이번 판의 각 수를 채점합니다. 상대 AI와는 별개인 분석 전용 엔진입니다.</p>
+                        <div class="data-actions">
+                            <button id="sf-analyze-btn" class="sidebar-btn secondary" type="button">
+                                <i class="fa-solid fa-magnifying-glass-chart"></i> 이번 판 분석
+                            </button>
+                        </div>
+                        <p id="sf-status" class="sf-status">아직 분석하지 않았습니다. VS Computer로 한 판 둔 뒤 눌러보세요.</p>
+                        <div class="data-stat-grid" id="sf-result-grid"></div>
+                        <div class="sf-worst" id="sf-worst"></div>
                     </section>
                 </div>
 
